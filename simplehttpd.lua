@@ -116,8 +116,8 @@ function socket_set(maxfds)
     fds.nfds = fds.nfds + 1
   end
 
-  fds.socket = function()
-    local s = socket(AF_INET6, SOCK_STREAM, 0)
+  fds.socket = function(socktype)
+    local s = socket(AF_INET6, socktype, 0)
     return s
   end
 
@@ -129,8 +129,8 @@ function socket_set(maxfds)
     return sa;
   end
 
-  fds.listener_socket = function(port)
-    local s = fds.socket()
+  fds.listener_socket = function(port, socktype)
+    local s = fds.socket(socktype)
     if bind(s, fds.get_sa_any(port), 128) == 0 and listen(s, 10) then
       return s
     else
@@ -143,7 +143,7 @@ function socket_set(maxfds)
     send(fds.pfds[i].fd, data, len, 0)
   end
 
-  fds.add_listener = function(port, callback)
+  fds.add_tcp_listener = function(port, callback)
     if not callback then callback = function() return {} end end
 
     local f = function(fds, i)
@@ -170,12 +170,12 @@ function socket_set(maxfds)
       end
     end
 
-    local fd = fds.listener_socket(port)
+    local fd = fds.listener_socket(port, SOCK_STREAM)
     if fd then
       fds.add(fd, { read = f })
       return true
     else
-      print("Could not add listener")
+      print("Could not add tcp listener on port " .. port)
       return nil
     end
   end
@@ -200,7 +200,7 @@ local my_accept_cb = function(fds, i)
 end
 
 
-while not ss.add_listener(12345, my_accept_cb) do
+while not ss.add_tcp_listener(12345, my_accept_cb) do
   sleep(1)
 end
 print("Added listener, please run the test")
