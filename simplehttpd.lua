@@ -23,13 +23,19 @@ ffi.cdef [[
 typedef unsigned long int nfds_t;
 
 
+ void perror(const char *s);
+
  int bind(int sockfd, sock_stor *addr, socklen_t addrlen);
  int socket(int domain, int type, int protocol);
  int listen(int sockfd, int backlog);
  int poll(struct pollfd *fds, nfds_t nfds, int timeout);
  int accept(int sockfd, sock_stor *addr, socklen_t *addrlen);
  int send(int sockfd, const void *buf, int len, int flags);
+ int sendto(int sockfd, const void *buf, size_t len, int flags, sock_stor *dest_addr, socklen_t addrlen);
  int recv(int sockfd, void *buf, int len, int flags);
+ int recvfrom(int sockfd, void *buf, int len, int flags,
+                        sock_stor *src_addr, socklen_t *addrlen);
+
  int close(int fd);
 
  typedef struct { char *pc; } sighandler_t;
@@ -131,7 +137,7 @@ function socket_set(maxfds)
 
   fds.listener_socket = function(port, socktype)
     local s = fds.socket(socktype)
-    if bind(s, fds.get_sa_any(port), 128) == 0 and listen(s, 10) then
+    if bind(s, fds.get_sa_any(port), 128) == 0 and (socktype == SOCK_DGRAM or listen(s, 10)) then
       return s
     else
       close(s)
@@ -140,44 +146,72 @@ function socket_set(maxfds)
   end
 
   fds.send = function(i, data, len)
-    send(fds.pfds[i].fd, data, len, 0)
+    return send(fds.pfds[i].fd, data, len, 0)
   end
 
-  fds.add_tcp_listener = function(port, callback)
+  fds.sendto = function(i, data, len, sa, sa_len)
+    return sendto(fds.pfds[i].fd, data, len, 0, sa, sa_len)
+  end
+
+  fds.add_listener = function(socktype, port, callback)
     if not callback then callback = function() return {} end end
+    local handles_dgram 
+
+    if socktype == SOCK_DGRAM then
+      handles_dgram = callback(fds)
+      if not handles_dgram then
+        handles_dgram = {}
+      end
+    end
+    
 
     local f = function(fds, i)
       local sa = ffi.new("sock_stor[1]") 
       local sa_len = ffi.new("int[1]")
-      local fdn = accept(fds.pfds[i].fd, sa, sa_len)
-      local handles = callback(fds, i, sa, sa_len, fdn)
-      if handles then
-        local h = {}
-        h.read = function(fds, i)
-          local n = recv(fds.pfds[i].fd, fds.buf, fds.BUF_LEN, 0)
-          if n > 0 then
-            handles.read(fds, i, fds.buf, n)
-          else
-            fds.close(i)
+      sa_len[0] = 128
+      if socktype == SOCK_STREAM then
+        local fdn = accept(fds.pfds[i].fd, sa, sa_len)
+        local handles = callback(fds, i, sa, sa_len, fdn)
+        if handles then
+          local h = {}
+          h.read = function(fds, i)
+            local n = recv(fds.pfds[i].fd, fds.buf, fds.BUF_LEN, 0)
+            if n > 0 then
+              handles.read(fds, i, fds.buf, n)
+            else
+              fds.close(i)
+            end
           end
+          h.close = handles.close
+          h.is_listener = true
+          fds.add(fdn, h)
+        else
+          close(fdn)
         end
-        h.close = handles.close
-        h.is_listener = true
-
-        fds.add(fdn, h)
       else
-        close(fdn)
+        local n = recvfrom(fds.pfds[i].fd, fds.buf, fds.BUF_LEN, 0,  sa, sa_len)
+        if handles_dgram.read then
+          handles_dgram.read(fds, i, fds.buf, n, sa, sa_len[0])
+        end
       end
     end
 
-    local fd = fds.listener_socket(port, SOCK_STREAM)
+    local fd = fds.listener_socket(port, socktype)
+
     if fd then
       fds.add(fd, { read = f })
       return true
     else
-      print("Could not add tcp listener on port " .. port)
       return nil
     end
+  end
+
+  fds.add_tcp_listener = function(port, callback)
+    return fds.add_listener(SOCK_STREAM, port, callback)
+  end
+
+  fds.add_udp_listener = function(port, callback)
+    return fds.add_listener(SOCK_DGRAM, port, callback)
   end
 
   return fds
@@ -199,10 +233,25 @@ local my_accept_cb = function(fds, i)
   return cb
 end
 
+local my_udp_cb = function(fds, i)
+  local cb = {}
+  cb.read = function(fds, i, data, len, sa, sa_len)
+    fds.sendto(i, data, len, sa, sa_len)
+  end
+  return cb
+end
+
 
 while not ss.add_tcp_listener(12345, my_accept_cb) do
   sleep(1)
+  print("Retrying TCP listener..")
 end
+
+while not ss.add_udp_listener(12345, my_udp_cb) do
+  sleep(1)
+  print("Retrying UDP listener..")
+end
+
 print("Added listener, please run the test")
 while true do
   local n = ss.poll(1000)
