@@ -1,7 +1,6 @@
 module('Redis', package.seeall)
 
 local socket = require('socket')
-local uri    = require('socket.url')
 
 local commands = {}
 local network, request, response = {}, {}, {}
@@ -541,23 +540,7 @@ function connect(...)
                 tcp_nodelay = args[1].tcp_nodelay == true
             end
         else
-            local server = uri.parse(select(1, ...))
-            if server.scheme then
-                assert(server.scheme == 'redis', '"'..server.scheme..'" is an invalid scheme')
-                host, port = server.host, server.port or defaults.port
-                if server.query then
-                    for k,v in server.query:gmatch('([-_%w]+)=([-_%w]+)') do
-                        if k == 'tcp_nodelay' or k == 'tcp-nodelay' then
-                            tcp_nodelay = parse_boolean(v)
-                            if tcp_nodelay == nil then
-                                tcp_nodelay = defaults.tcp_nodelay
-                            end
-                        end
-                    end
-                end
-            else
-                host, port = server.path, defaults.port
-            end
+	    assert("Should have either a table or a host/port as arguments" == nil)
         end
     elseif #args > 1 then
         host, port = unpack(args)
