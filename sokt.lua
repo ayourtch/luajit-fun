@@ -120,11 +120,17 @@ function socket_set(maxfds)
   end
 
   fds.add = function(fd, cb)
-    fds.pfds[fds.nfds].fd = fd
-    fds.pfds[fds.nfds].events = POLLIN
-    if not cb then cb = {} end
-    fds.cb[fds.nfds] = cb
-    fds.nfds = fds.nfds + 1
+    if(fds.nfds < fds.MAX_FD) then
+      local i = fds.nfds
+      fds.pfds[i].fd = fd
+      fds.pfds[i].events = POLLIN
+      if not cb then cb = {} end
+      fds.cb[i] = cb
+      fds.nfds = fds.nfds + 1
+      return i
+    else
+      return nil
+    end
   end
 
   fds.socket = function(socktype)
