@@ -1,0 +1,62 @@
+diff --git a/src/lj_cparse.c b/src/lj_cparse.c
+index 7da4d12..45ce94f 100644
+--- a/src/lj_cparse.c
++++ b/src/lj_cparse.c
+@@ -15,6 +15,7 @@
+ #include "lj_frame.h"
+ #include "lj_vm.h"
+ #include "lj_char.h"
++#include <stdio.h>
+ 
+ /*
+ ** Important note: this is NOT a validating C parser! This is a minimal
+@@ -1158,6 +1159,18 @@ static void cp_decl_attributes(CPState *cp, CPDecl *decl)
+   }
+ }
+ 
++static char xbuf[255] = "";
++
++static void do_redef(CPState *cp) {
++  static int redef_cnt = 1;
++  memcpy(xbuf, strdata(cp->str), cp->str->len);
++  xbuf[cp->str->len] = 0;
++  sprintf(&xbuf[strlen(xbuf)], "_REDEF_%d", redef_cnt++);
++  cp->val.id = 0;
++  cp->str = lj_str_new(cp->L, xbuf, strlen(xbuf));
++  cp->ct = 0;
++}
++
+ /* Parse struct/union/enum name. */
+ static CTypeID cp_struct_name(CPState *cp, CPDecl *sdecl, CTInfo info)
+ {
+@@ -1169,6 +1182,9 @@ static CTypeID cp_struct_name(CPState *cp, CPDecl *sdecl, CTInfo info)
+   cp->tmask = CPNS_DEFAULT;
+   if (cp->tok != '{') {
+     if (cp->tok != CTOK_IDENT) cp_err_token(cp, CTOK_IDENT);
++    if (cp->val.id && ((cp->ct->info ^ info) & (CTMASK_NUM|CTF_UNION))) {  /* Name of existing struct/union/enum. */
++      do_redef(cp);
++    }
+     if (cp->val.id) {  /* Name of existing struct/union/enum. */
+       sid = cp->val.id;
+       ct = cp->ct;
+@@ -1190,6 +1206,12 @@ static CTypeID cp_struct_name(CPState *cp, CPDecl *sdecl, CTInfo info)
+     ct->size = CTSIZE_INVALID;
+   }
+   if (cp->tok == '{') {
++    if (ct->size != CTSIZE_INVALID || ct->sib) {
++      do_redef(cp);
++      sid = lj_ctype_new(cp->cts, &ct);
++      ct->info = info;
++      ct->size = CTSIZE_INVALID;
++    }
+     if (ct->size != CTSIZE_INVALID || ct->sib)
+       cp_errmsg(cp, 0, LJ_ERR_FFI_REDEF, strdata(gco2str(gcref(ct->name))));
+     ct->sib = 1;  /* Indicate the type is currently being defined. */
+@@ -1392,6 +1414,7 @@ static CTypeID cp_decl_enum(CPState *cp, CPDecl *sdecl)
+     do {
+       GCstr *name = cp->str;
+       if (cp->tok != CTOK_IDENT) cp_err_token(cp, CTOK_IDENT);
++      if (cp->val.id) { do_redef(cp); }
+       if (cp->val.id) cp_errmsg(cp, 0, LJ_ERR_FFI_REDEF, strdata(name));
+       cp_next(cp);
+       if (cp_opt(cp, '=')) {
