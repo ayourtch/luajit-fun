@@ -111,18 +111,28 @@ tokentypes = {
   { "[a-zA-Z$_][a-zA-Z_$0-9]*", "ident" },
   { "[+][+]", "plus plus" },
   { "[-][-]", "minus minus" },
+  { "[|][|]", "op_logic_or" },
+  { "[=][=]", "op_equals" },
+  { "[|][=]", "op_do_or" },
+  { "[&][=]", "op_do_and" },
+  { "[+][=]", "op_do_plus" },
+  { "[-][=]", "op_do_minus" },
+  { "[*][=]", "op_do_minus" },
   { "[(]", "open paren" },
   { "[)]", "close paren" },
   { "[%[]", "open bracket" },
   { "[%]]", "close bracket" },
-  { "[%{]", "open brace" },
-  { "[%}]", "close brace" },
+  { "[{]", "open brace" },
+  { "[}]", "close brace" },
+  { "[<]", "open angle" },
+  { "[>]", "close angle" },
   { "[,]", "comma" },
   { "[#]", "hash" },
   { "%%:", "hash" }, -- digraph
   { "[;]", "semicolon" },
   { "$", "eol" },
-  { "[+-/*&]", "operator" },
+  { "[!]", "op_not" },
+  { "[+-/*&|=]", "operator" },
   { "'[^']*'", "char literal" },
   { '"[^"]*"', "string literal" },
 }
@@ -168,7 +178,7 @@ function next_token(xline, start)
       return v[2], tok, space, start + #tok + #space
     end
   end
-  -- print("NEXT_U", "|"..xline:sub(start).."|")
+  print("NEXT_U", "|"..xline:sub(start).."|")
 
   return "unknown", "", "", start
 end
@@ -314,30 +324,27 @@ function string2tokens(aline, astart)
   while gettoken() do
     table.insert(tokens, t)
   end
+  table.insert(tokens, t) -- insert eol token
   return tokens
 end
 
 function cpp_expand_macros(astate, aline)
-  local out_tokens = {}
-
-  process_tokens(astate, out_tokens, string2tokens(aline), 1) 
-
-  return tokens2string(out_tokens)
 end
 
 
 function cpp_process(astate, aline)
   local out = {}
   -- print("PROCESS", aline)
-  local t_first = { next_token(aline, 1) }
+  local all_tokens = string2tokens(aline, 1)
+  local t_first = all_tokens[1]
   if tok_type(t_first) == "hash" then
-    local t_direc = { next_token(aline, t_first) }
+    local t_direc = all_tokens[2]
     assert(tok_type(t_direc) == "ident", "Expecting cpp directive")
     -- print("CPP", tok_type(t_direc), tok_str(t_direc))
     if tok_str(t_direc) == "define" then
-      local t_mname = { next_token(aline, t_direc) }
-      local t_mstart = { next_token(aline, t_mname) }
-      if tok_type(t_mstart) == "open paren" and tok_indent_str(t_mstart) == "" then
+      local t_mname = all_tokens[3]
+      local t_mstart = all_tokens[4]
+      if t_mstart and tok_type(t_mstart) == "open paren" and tok_indent_str(t_mstart) == "" then
         print ("DEFINE_FUNC", tok_str(t_mname), aline)
       elseif tok_type(t_mstart) == "eol" then
         print ("DEFINE_SWITCH", tok_str(t_mname), aline)
@@ -361,8 +368,9 @@ function cpp_process(astate, aline)
     end 
   else
     -- ordinary line
-    -- FIXME: to be uncommented later
-    astate.print(cpp_expand_macros(astate, aline))
+    local out_tokens = {}
+    process_tokens(astate, out_tokens, all_tokens, 1) 
+    -- astate.print(tokens2string(out_tokens))
   end
 end
 
