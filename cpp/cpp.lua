@@ -107,6 +107,7 @@ assert(eat_comments("/* \"a asd aasd  */") == " ")
 
 tokentypes = {
   { "0x[0-9A-F]+", "number" },
+  { "[0-9]+", "number" },
   { "[a-zA-Z$_][a-zA-Z_$0-9]*", "ident" },
   { "[+][+]", "plus plus" },
   { "[-][-]", "minus minus" },
@@ -265,6 +266,10 @@ assert(ttt(" # define A(X) X+X",
            { "eol",   "", "", 19 }
 ))
 
+function macro_undef(astate, aname)
+  print("UNDEFINE:", aname)
+end
+
 
 function cpp_process(astate, aline)
   local out = {}
@@ -275,8 +280,29 @@ function cpp_process(astate, aline)
     assert(tok_type(t_direc) == "ident", "Expecting cpp directive")
     -- print("CPP", tok_type(t_direc), tok_str(t_direc))
     if tok_str(t_direc) == "define" then
-      t_macro = { next_token(aline, t_direc) }
-      print ("DEFINE", tok_str(t_macro))
+      local t_mname = { next_token(aline, t_direc) }
+      local t_mstart = { next_token(aline, t_mname) }
+      if tok_type(t_mstart) == "open paren" and tok_indent_str(t_mstart) == "" then
+        print ("DEFINE_FUNC", tok_str(t_mname), aline)
+      elseif tok_type(t_mstart) == "eol" then
+        print ("DEFINE_SWITCH", tok_str(t_mname), aline)
+      else
+        print ("DEFINE_MACRO", tok_str(t_mname), aline)
+      end
+      
+    elseif tok_str(t_direc) == "undef" then
+      local t_mname = { next_token(aline, t_direc) }
+      assert(tok_type(t_mname) == "ident", "Expected name to undef")
+      macro_undef(astate, tok_str(t_mname))
+    elseif tok_str(t_direc) == "if" then
+    elseif tok_str(t_direc) == "else" then
+    elseif tok_str(t_direc) == "elif" then
+    elseif tok_str(t_direc) == "endif" then
+    elseif tok_str(t_direc) == "ifdef" then
+    elseif tok_str(t_direc) == "ifndef" then
+    elseif tok_str(t_direc) == "include" then
+    else 
+      print("ERR:", tok_str(t_direc))
     end 
   else
     -- ordinary line
@@ -321,3 +347,6 @@ local cpp_global_state = {
 }
 -- cpp("stdio.h")
 cpp(cpp_global_state, "bla.h")
+cpp(cpp_global_state, "/usr/include/stdio.h")
+cpp(cpp_global_state, "/usr/include/sys/stat.h")
+cpp(cpp_global_state, "/usr/include/unistd.h")
