@@ -113,12 +113,16 @@ tokentypes = {
   { "[-][-]", "minus minus" },
   { "[(]", "open paren" },
   { "[)]", "close paren" },
+  { "[%[]", "open bracket" },
+  { "[%]]", "close bracket" },
+  { "[%{]", "open brace" },
+  { "[%}]", "close brace" },
   { "[,]", "comma" },
   { "[#]", "hash" },
   { "%%:", "hash" }, -- digraph
   { "[;]", "semicolon" },
   { "$", "eol" },
-  { "[+-/*]", "operator" },
+  { "[+-/*&]", "operator" },
   { "'[^']*'", "char literal" },
   { '"[^"]*"', "string literal" },
 }
@@ -164,6 +168,8 @@ function next_token(xline, start)
       return v[2], tok, space, start + #tok + #space
     end
   end
+  -- print("NEXT_U", "|"..xline:sub(start).."|")
+
   return "unknown", "", "", start
 end
 
@@ -270,6 +276,47 @@ function macro_undef(astate, aname)
   print("UNDEFINE:", aname)
 end
 
+function tokens2string(tokens)
+  local out = {}
+  for i,t in ipairs(tokens) do
+    table.insert(out, tok_indent_str(t))
+    table.insert(out, tok_str(t))
+  end
+  return table.concat(out, "") 
+end
+
+-- walk all the tokens, expanding as needed, from state
+function process_tokens(astate, out_tokens, in_tokens, start) 
+  local n = 0
+  for i = start, #in_tokens do
+    table.insert(out_tokens, in_tokens[i])
+    n = i+1
+  end
+  return n
+end
+
+function string2tokens(aline, astart)
+  local tokens = {}
+  local t = astart
+  local gettoken = function() 
+    t = { next_token(aline, t) }
+    -- print("T:", t[1], t[2], t[3], t[4])
+    return (not (tok_type(t) == "eol"))
+  end
+  while gettoken() do
+    table.insert(tokens, t)
+  end
+  return tokens
+end
+
+function cpp_expand_macros(astate, aline)
+  local out_tokens = {}
+
+  process_tokens(astate, out_tokens, string2tokens(aline), 1) 
+
+  return tokens2string(out_tokens)
+end
+
 
 function cpp_process(astate, aline)
   local out = {}
@@ -306,7 +353,8 @@ function cpp_process(astate, aline)
     end 
   else
     -- ordinary line
-    -- out = cpp_expand_macros(astate, aline, 1)
+    -- FIXME: to be uncommented later
+    -- astate.print(cpp_expand_macros(astate, aline))
   end
 end
 
@@ -344,6 +392,7 @@ function cpp(astate, fname)
 end
 
 local cpp_global_state = {
+  print = print,
 }
 -- cpp("stdio.h")
 cpp(cpp_global_state, "bla.h")
