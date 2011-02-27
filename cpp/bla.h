@@ -7,15 +7,28 @@ O 10\
 20 /* 
 */ 23
 
+#define testing sometest
+
 %: define BAR testing
 
+#define SUBST1 subst1
+#define SUBSTx subst2
+#define SUBST2 SUBSTx
+
 #define FOO1(x,y) x y
-#define FOO1(x,y,z) x y z
+//#define FOO1(x,y,z) x y z
+#define BAZ() FOO1(1,2)
+
+SUBST1
+ SUBST2
 
 FOO
 
 BAR
+BAR()
+BAZ
+BAZ()
 
-FOO1(asd dsd, second, third)
-FOO1(asd dsd, second)
+// FOO1(asd dsd, second, third)
+// FOO1(asd dsd, second)
 

@@ -282,11 +282,8 @@ assert(ttt(" # define A(X) X+X",
            { "eol",   "", "", 19 }
 ))
 
-function macro_undef(astate, aname)
-  print("UNDEFINE:", aname)
-end
 
-function tokens2string(tokens)
+function tokens2str(tokens)
   local out = {}
   for i,t in ipairs(tokens) do
     table.insert(out, tok_indent_str(t))
@@ -299,16 +296,84 @@ end
 -- do the necessary walk-ahead too (function args, etc.)
 -- return the next unprocessed token #
 
-function process_token(astate, out_tokens, tok, i)
-  table.insert(out_tokens, tok)
-  return i+1
+function process_token(astate, out_tokens, in_tokens, i, indent)
+  local tok = in_tokens[i]
+  local typ = tok_type(tok)
+  -- the token is an argument of the macro - expand according to the current
+  -- macro that is being executed
+  if typ == "macro_arg" then
+    local ix = 1
+    local margs = astate.margs[#astate.margs]
+    local mname = astate.mcall[#astate.mcall]
+    local nam = tok_str(tok)
+    -- print("SUBST0:", nam)
+    local m = astate.macros[mname]
+    local ichain = margs[m.iarg[nam]]
+    -- print("SUBST:", tokens2str({ tok }), tokens2str(ichain))
+    ichain[1][3] = tok[3]
+
+    while ix <= #ichain do
+      ix = process_token(astate, out_tokens, ichain, ix, tok_indent_str(tok))
+    end
+    
+    return i+1 
+  elseif typ == "ident" then
+    local m = astate.macros[tok_str(tok)]
+    if m and ((not m.nargs) or (m.nargs and tok_type(in_tokens[i+1]) == "open paren")) then
+      if not m.nargs then
+        -- non-parametrized macro
+        local ib = 1
+        while ib <= #m.body do
+          ib = process_token(astate, out_tokens, m.body, ib)
+        end
+        return i+1
+      else
+        -- parametrized macro
+        local out = {}
+        local margs = { }
+        local marg = {}
+        i = i+2 -- skip the open paren
+        -- collect the arguments for the macro
+        while not (tok_type(in_tokens[i]) == "close paren") do
+          -- print("ARG:", in_tokens[i])
+          table.insert(marg, in_tokens[i])
+          i = i + 1
+          if tok_type(in_tokens[i]) == "comma" then
+            margs[1+#margs] = marg
+            marg = {}
+            i = i + 1
+          end 
+        end
+        if #marg > 0 then
+          margs[1+#margs] = marg
+        end
+        astate.margs[1+#astate.margs] = margs
+        astate.mcall[1+#astate.mcall] = m.name
+        
+        local ib = 1
+        while ib <= #m.body do
+          ib = process_token(astate, out_tokens, m.body, ib)
+        end
+
+        astate.margs[#astate.margs] = nil
+        astate.mcall[#astate.mcall] = nil
+        return i+1
+      end
+    else
+      table.insert(out_tokens, tok)
+      return i+1
+    end
+  else
+    table.insert(out_tokens, tok)
+    return i+1
+  end
 end
 
 -- walk all the tokens, expanding as needed, from state
 function process_tokens(astate, out_tokens, in_tokens, start) 
   local i = 1
   while i <= #in_tokens do
-    i = process_token(astate, out_tokens, in_tokens[i], i)
+    i = process_token(astate, out_tokens, in_tokens, i)
   end
   return i
 end
@@ -328,7 +393,78 @@ function string2tokens(aline, astart)
   return tokens
 end
 
-function cpp_expand_macros(astate, aline)
+function macro_undef(astate, aname)
+  print("UNDEFINE:", aname)
+
+  astate.macros[aname] = nil
+end
+
+-- defines "function-like" macro
+-- the start is the next token after the open paren
+function macro_define_func(astate, mname, tokens, start)
+  local m = { name = mname, nargs = 0, iarg = {}, body = {} }
+  local arg_n = 1
+  local token_idx = start
+  local arg_start = start
+
+  -- assign the numbers for the symbolic arguments
+  while not ( tok_type(tokens[token_idx]) == "close paren" ) do
+    -- print("ARG:", token_idx)
+    assert(tok_type(tokens[token_idx]) == "ident", tok_type(tokens[token_idx]) .. " unexpected")
+    m.nargs = m.nargs + 1
+    m.iarg[tok_str(tokens[token_idx])] = m.nargs
+    token_idx = token_idx + 1
+    if not ( tok_type(tokens[token_idx]) == "close paren" ) then
+      assert(tok_type(tokens[token_idx]) == "comma", tok_type(tokens[token_idx]))
+      token_idx = token_idx + 1
+    end
+  end
+
+  -- move past closing paren
+  token_idx = token_idx + 1
+
+  -- write the body
+  while not ( tok_type(tokens[token_idx]) == "eol" ) do
+    local tok = tokens[token_idx]
+    local aname = tok_str(tok)
+    local t = { tok_type(tok), aname, tok_indent_str(tok), 0 }
+    if tok_type(tok) == "ident" then
+      if m.iarg[aname] then
+        -- make a magic token that will grab the argument
+        t[1] = "macro_arg" 
+        table.insert(m.body, t)
+      else
+        table.insert(m.body, t)
+      end
+    else
+      table.insert(m.body, t)
+    end
+    token_idx = token_idx + 1
+  end
+  -- insert EOL too
+  table.insert(m.body, tokens[token_idx])
+  
+  astate.macros[mname] = m
+end
+
+-- defines "argument-less" macro
+-- if there is no expansion (eol) - create empty expansion.
+function macro_define_macro(astate, mname, tokens, start)
+  local m = { name = mname, nargs = nil, body = {} }
+  local token_idx = start
+
+  -- write the body
+  local first_token = true
+  while not ( tok_type(tokens[token_idx]) == "eol" ) do
+    local tok = tokens[token_idx]
+    local t = { tok_type(tok), tok_str(tok), tok_indent_str(tok), 0 }
+    table.insert(m.body, t)
+    token_idx = token_idx + 1
+  end
+  -- insert EOL too
+  table.insert(m.body, tokens[token_idx])
+
+  astate.macros[mname] = m
 end
 
 
@@ -345,11 +481,11 @@ function cpp_process(astate, aline)
       local t_mname = all_tokens[3]
       local t_mstart = all_tokens[4]
       if t_mstart and tok_type(t_mstart) == "open paren" and tok_indent_str(t_mstart) == "" then
-        print ("DEFINE_FUNC", tok_str(t_mname), aline)
-      elseif tok_type(t_mstart) == "eol" then
-        print ("DEFINE_SWITCH", tok_str(t_mname), aline)
+        -- print ("DEFINE_FUNC", tok_str(t_mname), aline)
+        macro_define_func(astate, tok_str(t_mname), all_tokens, 5)
       else
-        print ("DEFINE_MACRO", tok_str(t_mname), aline)
+        -- print ("DEFINE_MACRO", tok_str(t_mname), aline)
+        macro_define_macro(astate, tok_str(t_mname), all_tokens, 4)
       end
       
     elseif tok_str(t_direc) == "undef" then
@@ -370,7 +506,7 @@ function cpp_process(astate, aline)
     -- ordinary line
     local out_tokens = {}
     process_tokens(astate, out_tokens, all_tokens, 1) 
-    -- astate.print(tokens2string(out_tokens))
+    astate.print(tokens2str(out_tokens))
   end
 end
 
@@ -409,9 +545,12 @@ end
 
 local cpp_global_state = {
   print = print,
+  macros = {},
+  margs = {},
+  mcall = {},
 }
 -- cpp("stdio.h")
 cpp(cpp_global_state, "bla.h")
-cpp(cpp_global_state, "/usr/include/stdio.h")
-cpp(cpp_global_state, "/usr/include/sys/stat.h")
-cpp(cpp_global_state, "/usr/include/unistd.h")
+-- cpp(cpp_global_state, "/usr/include/stdio.h")
+-- cpp(cpp_global_state, "/usr/include/sys/stat.h")
+-- cpp(cpp_global_state, "/usr/include/unistd.h")
