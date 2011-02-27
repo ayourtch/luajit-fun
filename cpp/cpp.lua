@@ -140,6 +140,10 @@ function next_token(xline, start)
   local t, p
   local tokentype = "unknown"
   if not start then start = 1 end
+  if type(start) == "table" then
+    -- use the supplied token to figure where to start
+    start = start[4]
+  end
   local eline = bs_encode(xline:sub(start))
 
   for i,v in ipairs(tokentypes) do 
@@ -161,6 +165,11 @@ function next_token(xline, start)
   end
   return "unknown", "", "", start
 end
+
+function tok_type(t) return t[1] end
+function tok_str(t) return t[2] end
+function tok_indent_str(t) return t[3] end
+function tok_start_next(t) return t[4] end
 
 
 local same = function (t1, t2)
@@ -260,14 +269,14 @@ assert(ttt(" # define A(X) X+X",
 function cpp_process(astate, aline)
   local out = {}
   -- print("PROCESS", aline)
-  t = { next_token(aline, 1) }
-  if t[1] == "hash" then
-    local t_direc = { next_token(aline, t[4]) }
-    assert(t_direc[1] == "ident", "Expecting cpp directive")
-    -- print("CPP", t_direc[1], t_direc[2])
-    if t_direc[2] == "define" then
-      t_macro = { next_token(aline, t_direc[4]) }
-      print ("DEFINE", t_macro[2])
+  local t_first = { next_token(aline, 1) }
+  if tok_type(t_first) == "hash" then
+    local t_direc = { next_token(aline, t_first) }
+    assert(tok_type(t_direc) == "ident", "Expecting cpp directive")
+    -- print("CPP", tok_type(t_direc), tok_str(t_direc))
+    if tok_str(t_direc) == "define" then
+      t_macro = { next_token(aline, t_direc) }
+      print ("DEFINE", tok_str(t_macro))
     end 
   else
     -- ordinary line
