@@ -285,14 +285,22 @@ function tokens2string(tokens)
   return table.concat(out, "") 
 end
 
+-- process and expand a single token if needed
+-- do the necessary walk-ahead too (function args, etc.)
+-- return the next unprocessed token #
+
+function process_token(astate, out_tokens, tok, i)
+  table.insert(out_tokens, tok)
+  return i+1
+end
+
 -- walk all the tokens, expanding as needed, from state
 function process_tokens(astate, out_tokens, in_tokens, start) 
-  local n = 0
-  for i = start, #in_tokens do
-    table.insert(out_tokens, in_tokens[i])
-    n = i+1
+  local i = 1
+  while i <= #in_tokens do
+    i = process_token(astate, out_tokens, in_tokens[i], i)
   end
-  return n
+  return i
 end
 
 function string2tokens(aline, astart)
@@ -354,7 +362,7 @@ function cpp_process(astate, aline)
   else
     -- ordinary line
     -- FIXME: to be uncommented later
-    -- astate.print(cpp_expand_macros(astate, aline))
+    astate.print(cpp_expand_macros(astate, aline))
   end
 end
 
