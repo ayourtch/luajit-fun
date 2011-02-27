@@ -105,6 +105,10 @@ assert(eat_comments("/* \"a asd aasd  */") == " ")
 
 -- assert(nil, "All tests passed")
 
+function cpp_process(line)
+  print(line)
+end
+
 function cpp(fname)
   -- local realfname = fname_expand(fname)
   local realfname = fname
@@ -131,15 +135,7 @@ function cpp(fname)
         line = table.concat(comment_accum, "") .. line
         comment_accum = {}
         line_accum = {} 
-        local m0 = line:match("^%s*#")
-        if m0 then
-          local m1, m2 = line:match("^%s*#%s*([^%s]+)%s*(.*)$")
-          if m1 then
-            print(m1, m2)
-          else
-            print("====", m0, line)
-          end
-        end
+        cpp_process(line)
       end
     end
   end
