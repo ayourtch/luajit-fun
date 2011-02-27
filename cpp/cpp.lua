@@ -113,6 +113,8 @@ tokentypes = {
   { "[(]", "open paren" },
   { "[)]", "close paren" },
   { "[,]", "comma" },
+  { "[#]", "hash" },
+  { "%%:", "hash" }, -- digraph
   { "[;]", "semicolon" },
   { "$", "eol" },
   { "[+-/*]", "operator" },
@@ -153,10 +155,11 @@ function next_token(xline, start)
     -- print("NEXT_T:", ms, v[1], wf+1, string.sub(eline, wf+1))
     if ms and ms == wf+1 then
       -- print("NEXT_R", v[2], bs_decode(eline:sub(ms, mf)), space)
-      return v[2], bs_decode(eline:sub(ms, mf)), space
+      local tok = bs_decode(eline:sub(ms, mf))
+      return v[2], tok, space, start + #tok + #space
     end
   end
-  return "unknown", "", ""
+  return "unknown", "", "", start
 end
 
 
@@ -200,51 +203,79 @@ function ttt(val, ...)
   return true
 end
 
-assert(tt("0x123",       1, { "number", "0x123", "" }))
-assert(tt("abcd",        1, { "ident", "abcd", "" }))
-assert(tt(" abcd",        1, { "ident", "abcd", " " }))
-assert(tt("abcd()",      1, { "ident", "abcd", "" }))
-assert(tt("abcd()",      5, { "open paren", "(", "" }))
-assert(tt("abcd()",      6, { "close paren", ")", "" }))
-assert(tt("abcd",        3, { "ident", "cd", "" }))
-assert(tt("  ,",         1, { "comma", ",", "  " }))
-assert(tt(", c  );",     1, { "comma", ",", "" }))
-assert(tt("  abcd",      1, { "ident", "abcd", "  " }))
-assert(tt("  test(a,b)", 9, { "comma", ",", "" }))
-assert(tt("  test(a  ,b)", 9, { "comma", ",", "  " }))
+assert(tt("0x123",       1, { "number", "0x123", "", 6 }))
+assert(tt("abcd",        1, { "ident", "abcd", "", 5 }))
+assert(tt(" abcd",        1, { "ident", "abcd", " ", 6 }))
+assert(tt("abcd()",      1, { "ident", "abcd", "", 5 }))
+assert(tt("abcd()",      5, { "open paren", "(", "", 6 }))
+assert(tt("abcd()",      6, { "close paren", ")", "", 7 }))
+assert(tt("abcd",        3, { "ident", "cd", "", 5 }))
+assert(tt("  ,",         1, { "comma", ",", "  ", 4 }))
+assert(tt(", c  );",     1, { "comma", ",", "", 2 }))
+assert(tt("  abcd",      1, { "ident", "abcd", "  ", 7 }))
+assert(tt("  test(a,b)", 9, { "comma", ",", "", 10 }))
+assert(tt("  test(a  ,b)", 9, { "comma", ",", "  ", 12 }))
 
-assert(tt("  'test(a  ,b)'",        1, { "char literal", "'test(a  ,b)'", "  " }))
-assert(tt("  'test(a\\'  ,b)';a;b",        1, { "char literal", "'test(a\\'  ,b)'", "  " }))
-assert(tt('  "test(a\\"  ,b)";a;b',        1, { "string literal", '"test(a\\"  ,b)"', "  " }))
-assert(tt('  *"test(a\\"  ,b)";a;b',       1, { "operator", '*', "  " }))
+assert(tt("  'test(a  ,b)'",        1, { "char literal", "'test(a  ,b)'", "  ", 16 }))
+assert(tt("  'test(a\\'  ,b)';a;b",        1, { "char literal", "'test(a\\'  ,b)'", "  ", 18 }))
+assert(tt('  "test(a\\"  ,b)";a;b',        1, { "string literal", '"test(a\\"  ,b)"', "  ", 18 }))
+assert(tt('  *"test(a\\"  ,b)";a;b',       1, { "operator", '*', "  ", 4 }))
 
-assert(tt( " a+b;",       1, { "ident", 'a', " " }))
+assert(tt( " a+b;",       1, { "ident", 'a', " ", 3 }))
 assert(ttt(" a+b;", 
-           { "ident",       "a", " " },
-           { "operator",    "+", "" },
-           { "ident",       "b", "" },
-           { "semicolon",   ";", "" },
-           { "eol",   "", "" }
+           { "ident",       "a", " ", 3 },
+           { "operator",    "+", "", 4 },
+           { "ident",       "b", "", 5 },
+           { "semicolon",   ";", "", 6 },
+           { "eol",   "", "", 6 }
 ))
 
 assert(ttt(" a+b  ( 'Tes;ting\\'', c  );", 
-           { "ident",         "a", " " },
-           { "operator",      "+", "" },
-           { "ident",         "b", "" },
-           { "open paren",    "(", "  " },
-           { "char literal",  "'Tes;ting\\''", " " },
-           { "comma",         ",", "" },
-           { "ident",         "c", " " },
-           { "close paren",   ")", "  " },
-           { "semicolon",     ";", "" },
-           { "eol",   "", "" }
+           { "ident",         "a", " ", 3 },
+           { "operator",      "+", "", 4 },
+           { "ident",         "b", "", 5 },
+           { "open paren",    "(", "  ", 8 },
+           { "char literal",  "'Tes;ting\\''", " ", 21 },
+           { "comma",         ",", "", 22 },
+           { "ident",         "c", " ", 24 },
+           { "close paren",   ")", "  ", 27 },
+           { "semicolon",     ";", "", 28 },
+           { "eol",   "", "", 28 }
 ))
 
-function cpp_process(line)
-  print(line)
+assert(ttt(" # define A(X) X+X", 
+           { "hash",       "#", " ", 3 },
+           { "ident",      "define", " ", 10 },
+           { "ident",       "A", " ", 12 },
+           { "open paren",  "(", "", 13  },
+           { "ident",       "X", "", 14 },
+           { "close paren", ")", "", 15 },
+           { "ident",       "X", " ", 17 },
+           { "operator",    "+", "", 18 },
+           { "ident",       "X", "", 19 },
+           { "eol",   "", "", 19 }
+))
+
+
+function cpp_process(astate, aline)
+  local out = {}
+  -- print("PROCESS", aline)
+  t = { next_token(aline, 1) }
+  if t[1] == "hash" then
+    local t_direc = { next_token(aline, t[4]) }
+    assert(t_direc[1] == "ident", "Expecting cpp directive")
+    -- print("CPP", t_direc[1], t_direc[2])
+    if t_direc[2] == "define" then
+      t_macro = { next_token(aline, t_direc[4]) }
+      print ("DEFINE", t_macro[2])
+    end 
+  else
+    -- ordinary line
+    -- out = cpp_expand_macros(astate, aline, 1)
+  end
 end
 
-function cpp(fname)
+function cpp(astate, fname)
   -- local realfname = fname_expand(fname)
   local realfname = fname
   local f = io.open(realfname)
@@ -270,12 +301,14 @@ function cpp(fname)
         line = table.concat(comment_accum, "") .. line
         comment_accum = {}
         line_accum = {} 
-        cpp_process(line)
+        cpp_process(astate, line)
       end
     end
   end
   f:close()
 end
 
+local cpp_global_state = {
+}
 -- cpp("stdio.h")
-cpp("bla.h")
+cpp(cpp_global_state, "bla.h")
