@@ -105,6 +105,141 @@ assert(eat_comments("/* \"a asd aasd  */") == " ")
 
 -- assert(nil, "All tests passed")
 
+tokentypes = {
+  { "0x[0-9A-F]+", "number" },
+  { "[a-zA-Z$_][a-zA-Z_$0-9]*", "ident" },
+  { "[+][+]", "plus plus" },
+  { "[-][-]", "minus minus" },
+  { "[(]", "open paren" },
+  { "[)]", "close paren" },
+  { "[,]", "comma" },
+  { "[;]", "semicolon" },
+  { "$", "eol" },
+  { "[+-/*]", "operator" },
+  { "'[^']*'", "char literal" },
+  { '"[^"]*"', "string literal" },
+}
+
+
+-- see http://www.lua.org/pil/20.4.html
+function bs_encode (s)
+  return (string.gsub(s, "\\(.)", function (x)
+          return string.format("\\%03d", string.byte(x))
+          end))
+end
+
+function bs_decode (s)
+  return (string.gsub(s, "\\(%d%d%d)", function (d)
+          return "\\" .. string.char(d)
+          end))
+end
+
+function next_token(xline, start)
+  local t, p
+  local tokentype = "unknown"
+  if not start then start = 1 end
+  local eline = bs_encode(xline:sub(start))
+
+  for i,v in ipairs(tokentypes) do 
+    local ms, mf
+    local ws, wf = eline:find("%s*", 1)
+    local space = ""
+    if ws then
+      space = eline:sub(ws, wf)
+    else
+      wf = 0
+    end
+    ms, mf = eline:find(v[1], wf+1)
+    -- print("NEXT_T:", ms, v[1], wf+1, string.sub(eline, wf+1))
+    if ms and ms == wf+1 then
+      -- print("NEXT_R", v[2], bs_decode(eline:sub(ms, mf)), space)
+      return v[2], bs_decode(eline:sub(ms, mf)), space
+    end
+  end
+  return "unknown", "", ""
+end
+
+
+local same = function (t1, t2)
+  for i,v in pairs(t1) do
+    if not (v == t2[i]) then
+      print("key " .. tostring(i) .. " mismatch: result |" .. 
+          tostring(v) .. "|, expected |" .. tostring(t2[i]) .. "|")
+      return false
+    end
+  end
+  return true
+end
+
+function tt(val, start, ret) 
+  local rret = { next_token(val, start) }
+  if not same(rret, ret) then
+    print("Failure", "#", "got", "expected")
+    for i,v in ipairs(rret) do
+      print("", i,v, ret[i])
+    end
+    return false
+  end
+  return true
+end
+
+function ttt(val, ...)
+  local a = {...}
+  local s = 1
+  local t 
+  for i,v in ipairs(a) do
+    t = { next_token(val, s) }
+    if not same(t, v) then
+      return nil, "Token #".. i .. " while parsing " .. val .. " from pos " .. 
+                          s .. "; substr: '" .. string.sub(val, s) .. "'"
+    end
+    -- print("Token:", t[1], t[2], t[3])
+    -- print("Increment pos:", s, #(t[2]), #(t[3]))
+    s = s + #(t[2]) + #(t[3])  
+  end
+  return true
+end
+
+assert(tt("0x123",       1, { "number", "0x123", "" }))
+assert(tt("abcd",        1, { "ident", "abcd", "" }))
+assert(tt(" abcd",        1, { "ident", "abcd", " " }))
+assert(tt("abcd()",      1, { "ident", "abcd", "" }))
+assert(tt("abcd()",      5, { "open paren", "(", "" }))
+assert(tt("abcd()",      6, { "close paren", ")", "" }))
+assert(tt("abcd",        3, { "ident", "cd", "" }))
+assert(tt("  ,",         1, { "comma", ",", "  " }))
+assert(tt(", c  );",     1, { "comma", ",", "" }))
+assert(tt("  abcd",      1, { "ident", "abcd", "  " }))
+assert(tt("  test(a,b)", 9, { "comma", ",", "" }))
+assert(tt("  test(a  ,b)", 9, { "comma", ",", "  " }))
+
+assert(tt("  'test(a  ,b)'",        1, { "char literal", "'test(a  ,b)'", "  " }))
+assert(tt("  'test(a\\'  ,b)';a;b",        1, { "char literal", "'test(a\\'  ,b)'", "  " }))
+assert(tt('  "test(a\\"  ,b)";a;b',        1, { "string literal", '"test(a\\"  ,b)"', "  " }))
+assert(tt('  *"test(a\\"  ,b)";a;b',       1, { "operator", '*', "  " }))
+
+assert(tt( " a+b;",       1, { "ident", 'a', " " }))
+assert(ttt(" a+b;", 
+           { "ident",       "a", " " },
+           { "operator",    "+", "" },
+           { "ident",       "b", "" },
+           { "semicolon",   ";", "" },
+           { "eol",   "", "" }
+))
+
+assert(ttt(" a+b  ( 'Tes;ting\\'', c  );", 
+           { "ident",         "a", " " },
+           { "operator",      "+", "" },
+           { "ident",         "b", "" },
+           { "open paren",    "(", "  " },
+           { "char literal",  "'Tes;ting\\''", " " },
+           { "comma",         ",", "" },
+           { "ident",         "c", " " },
+           { "close paren",   ")", "  " },
+           { "semicolon",     ";", "" },
+           { "eol",   "", "" }
+))
+
 function cpp_process(line)
   print(line)
 end
