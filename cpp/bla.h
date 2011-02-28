@@ -38,6 +38,11 @@ SUBST start
 #else
   SUBST1 undefined
 #endif
+#ifndef SUBST2
+  SUBST2 undefined
+#else
+  SUBST2 defined
+#endif
 SUBST end
 
 // FOO1(asd dsd, second, third)
