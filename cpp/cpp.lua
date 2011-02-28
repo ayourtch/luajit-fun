@@ -296,7 +296,9 @@ end
 -- do the necessary walk-ahead too (function args, etc.)
 -- return the next unprocessed token #
 
-function process_token(astate, out_tokens, in_tokens, i, indent)
+local process_token
+
+function process_token_real(astate, out_tokens, in_tokens, i, indent)
   local tok = in_tokens[i]
   local typ = tok_type(tok)
   -- the token is an argument of the macro - expand according to the current
@@ -367,6 +369,17 @@ function process_token(astate, out_tokens, in_tokens, i, indent)
     table.insert(out_tokens, tok)
     return i+1
   end
+end
+
+
+-- process_token fixes up the indentation
+process_token = function(astate, out_tokens, in_tokens, i, indent)
+  local old_indent = tok_indent_str(in_tokens[i])
+  local old_i = i
+  local old_j = #out_tokens + 1
+  local ret = process_token_real(astate, out_tokens, in_tokens, i, indent)
+  out_tokens[old_j][3] = old_indent
+  return ret
 end
 
 -- walk all the tokens, expanding as needed, from state
