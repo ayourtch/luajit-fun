@@ -555,6 +555,7 @@ function cpp_process(astate, aline)
       assert(#astate.memit > 1, "ifdef: internal error")
     elseif tok_str(t_direc) == "ifndef" then
       local cond = true -- FIXME
+      cond = (astate.macros[tok_str(t_mname)] == nil)
       cpp_push_try_fire(astate, cond)
     elseif tok_str(t_direc) == "include" then
     else 
