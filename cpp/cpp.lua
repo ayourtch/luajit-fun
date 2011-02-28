@@ -481,6 +481,37 @@ function macro_define_macro(astate, mname, tokens, start)
 end
 
 
+function cpp_try_fire(astate, cond)
+  if not astate.mmute[#astate.mmute] then
+    astate.memit[#astate.memit] = false
+    if not astate.mfired[#astate.mfired] then
+      astate.memit[#astate.memit] = cond
+      astate.mfired[#astate.mfired] = cond
+    end
+  end
+end
+
+function cpp_push(astate)
+  -- if it was muted, stay muted
+  astate.mmute[1+#astate.mmute] = astate.mmute[#astate.mmute]
+  -- nothing fired at this level yet
+  astate.mfired[1+#astate.mfired] = false
+  -- emit by default
+  astate.memit[1+#astate.memit] = true
+end
+
+function cpp_pop(astate)
+  assert(#astate.mmute > 1)
+  astate.mmute[#astate.mmute] = nil
+  astate.mfired[#astate.mfired] = nil
+  astate.memit[#astate.memit] = nil
+end
+
+function cpp_push_try_fire(astate, cond)
+  cpp_push(astate)
+  cpp_try_fire(astate, cond)
+end
+
 function cpp_process(astate, aline)
   local out = {}
   -- print("PROCESS", aline)
@@ -488,10 +519,10 @@ function cpp_process(astate, aline)
   local t_first = all_tokens[1]
   if tok_type(t_first) == "hash" then
     local t_direc = all_tokens[2]
+    local t_mname = all_tokens[3]
     assert(tok_type(t_direc) == "ident", "Expecting cpp directive")
     -- print("CPP", tok_type(t_direc), tok_str(t_direc))
     if tok_str(t_direc) == "define" then
-      local t_mname = all_tokens[3]
       local t_mstart = all_tokens[4]
       if t_mstart and tok_type(t_mstart) == "open paren" and tok_indent_str(t_mstart) == "" then
         -- print ("DEFINE_FUNC", tok_str(t_mname), aline)
@@ -506,20 +537,36 @@ function cpp_process(astate, aline)
       assert(tok_type(t_mname) == "ident", "Expected name to undef")
       macro_undef(astate, tok_str(t_mname))
     elseif tok_str(t_direc) == "if" then
+      local cond = true -- FIXME
+      cpp_push_try_fire(astate, cond)
     elseif tok_str(t_direc) == "else" then
+      assert(#astate.memit > 1, "stray else")
+      cpp_try_fire(astate, true)
     elseif tok_str(t_direc) == "elif" then
+      assert(#astate.memit > 1, "stray elif")
+      local cond = true -- FIXME
+      cpp_try_fire(astate, cond)
     elseif tok_str(t_direc) == "endif" then
+      cpp_pop(astate)
     elseif tok_str(t_direc) == "ifdef" then
+      local cond = true -- FIXME
+      cond = not (astate.macros[tok_str(t_mname)] == nil)
+      cpp_push_try_fire(astate, cond)
+      assert(#astate.memit > 1, "ifdef: internal error")
     elseif tok_str(t_direc) == "ifndef" then
+      local cond = true -- FIXME
+      cpp_push_try_fire(astate, cond)
     elseif tok_str(t_direc) == "include" then
     else 
       print("ERR:", tok_str(t_direc))
     end 
   else
-    -- ordinary line
-    local out_tokens = {}
-    process_tokens(astate, out_tokens, all_tokens, 1) 
-    astate.print(tokens2str(out_tokens))
+    -- ordinary line 
+    if astate.memit[#astate.memit] and not astate.mmute[#astate.mmute] then
+      local out_tokens = {}
+      process_tokens(astate, out_tokens, all_tokens, 1) 
+      astate.print(tokens2str(out_tokens))
+    end
   end
 end
 
@@ -561,6 +608,9 @@ local cpp_global_state = {
   macros = {},
   margs = {},
   mcall = {},
+  memit = { true }, --  stack of booleans that talk whether to pass the input to output or not (memit = condition of if/ifdef)
+  mmute = { false }, -- whether the output is muted by upper-layer conditionals ( mute = mute(parent) or not memit(parent) )
+  mfired = { false }, -- whether the #if/else like conditional has fired previously
 }
 -- cpp("stdio.h")
 cpp(cpp_global_state, "bla.h")

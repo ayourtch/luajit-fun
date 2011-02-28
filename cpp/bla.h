@@ -32,6 +32,14 @@ BAR()
 BAZ
 BAZ()
 
+SUBST start
+#ifdef SUBST1
+  SUBST1 defined
+#else
+  SUBST1 undefined
+#endif
+SUBST end
+
 // FOO1(asd dsd, second, third)
 // FOO1(asd dsd, second)
 
