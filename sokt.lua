@@ -299,7 +299,6 @@ function socket_set(maxfds)
     cmsg.h.cmsg_level = 1;
     cmsg.h.cmsg_type = 1;  
     cmsg.h.cmsg_len = ffi.sizeof(cmsg)
-    print("SIZE:", cmsg.h.cmsg_len)
     cmsg.fd = fd
     msg.msg_iov = iovptr;
     msg.msg_iovlen = 1;
