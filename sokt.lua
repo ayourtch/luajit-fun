@@ -1,4 +1,5 @@
 local require,setmetatable,collectgarbage,tostring = require,setmetatable,collectgarbage,tostring
+local print = print
 
 module "sokt"
 
@@ -80,12 +81,13 @@ Anticioating the pleasure of deleting this when I have
 the preprocessor ready.
 */
 
-struct cmsghdr_fd {
+struct cmsghdr {
            long  cmsg_len;    /* data byte count, including header */
            int       cmsg_level;  /* originating protocol */
            int       cmsg_type;   /* protocol-specific type */
-           int       fd;        /* let's just append the FD here */
        };
+
+typedef struct cmsghdrfd { struct cmsghdr h; int fd; } cmsghdrfd_t;
 
 struct msghdr
   {
@@ -284,7 +286,7 @@ function socket_set(maxfds)
   fds.send_fd = function(ipc, fd, code)
     local buf = ffi.new("char [1]")
     buf[0] = code
-    local cmsgptr = ffi.new("struct cmsghdr_fd[1]")
+    local cmsgptr = ffi.new("struct cmsghdrfd[1]")
     local cmsg = cmsgptr[0]
     local iovptr = ffi.new("struct iovec[1]")
     local iov = iovptr[0]
@@ -294,9 +296,10 @@ function socket_set(maxfds)
     iov.iov_base = buf
     iov.iov_len = 1
 
-    cmsg.cmsg_level = 1;
-    cmsg.cmsg_type = 1;  
-    cmsg.cmsg_len = ffi.sizeof(cmsg)
+    cmsg.h.cmsg_level = 1;
+    cmsg.h.cmsg_type = 1;  
+    cmsg.h.cmsg_len = ffi.sizeof(cmsg)
+    print("SIZE:", cmsg.h.cmsg_len)
     cmsg.fd = fd
     msg.msg_iov = iovptr;
     msg.msg_iovlen = 1;
@@ -307,7 +310,7 @@ function socket_set(maxfds)
 
   fds.recv_fd = function(ipc)
     local buf = ffi.new("char [1]")
-    local cmsgptr = ffi.new("struct cmsghdr_fd[1]")
+    local cmsgptr = ffi.new("struct cmsghdrfd[1]")
     local cmsg = cmsgptr[0]
     local iovptr = ffi.new("struct iovec[1]")
     local iov = iovptr[0]
@@ -319,9 +322,10 @@ function socket_set(maxfds)
 
     msg.msg_iov = iovptr;
     msg.msg_iovlen = 1;
-    msg.msg_control = cmsg_ptr; 
+    msg.msg_control = cmsgptr; 
     msg.msg_controllen = ffi.sizeof(cmsg)
-    if (ffi.C.recvmsg(ipc, msgptr, 0) > 0) then
+    res = ffi.C.recvmsg(ipc, msgptr, 0)
+    if (res > 0) then
       return cmsg.fd, buf[0]
     else
       return nil
