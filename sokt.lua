@@ -1,4 +1,4 @@
-local require,setmetatable,collectgarbage = require,setmetatable,collectgarbage
+local require,setmetatable,collectgarbage,tostring = require,setmetatable,collectgarbage,tostring
 
 module "sokt"
 
@@ -37,6 +37,7 @@ typedef unsigned long int nfds_t;
  int recv(int sockfd, void *buf, int len, int flags);
  int recvfrom(int sockfd, void *buf, int len, int flags,
                         sock_stor *src_addr, socklen_t *addrlen);
+ int connect(int sockfd, sock_stor *addr, socklen_t addrlen);
 
  int close(int fd);
 
@@ -47,8 +48,75 @@ typedef unsigned long int nfds_t;
   
  int printf(const char *fmt, ...);
  unsigned int sleep(unsigned int seconds);
+ unsigned int fork(void);
+
+typedef struct addrinfo {
+               int              ai_flags;
+               int              ai_family;
+               int              ai_socktype;
+               int              ai_protocol;
+               int           ai_addrlen;
+               sock_stor        *ai_addr;
+               char            *ai_canonname;
+               struct addrinfo *ai_next;
+} addrinfo_t;
+
+typedef addrinfo_t *p_addrinfo_t;
+
+int getaddrinfo(const char *node, const char *service,
+                       const struct addrinfo *hints,
+                       struct addrinfo **res);
+
+void freeaddrinfo(struct addrinfo *res);
+
+const char *gai_strerror(int errcode);
+
+void *memset(void *s, int c, size_t n);
+void *memcpy(void *dest, const void *src, size_t n);
+void perror(const char *s);
+
+/* This all stuff here is horrilifically unportable. 
+Anticioating the pleasure of deleting this when I have
+the preprocessor ready.
+*/
+
+struct cmsghdr_fd {
+           long  cmsg_len;    /* data byte count, including header */
+           int       cmsg_level;  /* originating protocol */
+           int       cmsg_type;   /* protocol-specific type */
+           int       fd;        /* let's just append the FD here */
+       };
+
+struct msghdr
+  {
+    void *msg_name;             /* Address to send to/receive from.  */
+    socklen_t msg_namelen;      /* Length of address data.  */
+
+    struct iovec *msg_iov;      /* Vector of data to send/receive into.  */
+    size_t msg_iovlen;          /* Number of elements in the vector.  */
+
+    void *msg_control;          /* Ancillary data (eg BSD filedesc passing). */
+    size_t msg_controllen;      /* Ancillary data buffer length.
+                                   !! The type should be socklen_t but the
+                                   definition of the kernel is incompatible
+                                   with this.  */
+
+    int msg_flags;              /* Flags on received message.  */
+  };
+
+struct iovec
+  {
+    void *iov_base;     /* Pointer to data.  */
+    size_t iov_len;     /* Length of data.  */
+  };
+
+int sendmsg(int sockfd, struct msghdr *msg, int flags);
+int recvmsg(int sockfd, struct msghdr *msg, int flags);
+int socketpair(int domain, int type, int protocol, int sv[2]);
 
 ]]
+
+
 
 local AF_INET = 2
 local AF_INET6 = 10
@@ -133,8 +201,10 @@ function socket_set(maxfds)
     end
   end
 
-  fds.socket = function(socktype)
-    local s = ffi.C.socket(AF_INET6, socktype, 0)
+  fds.socket = function(addr_f, socktype)
+    local st = socktype or SOCK_STREAM
+    local af = addr_f or AF_INET6
+    local s = ffi.C.socket(af, st, 0)
     return s
   end
 
@@ -146,6 +216,50 @@ function socket_set(maxfds)
     return sa;
   end
 
+  fds.lookup = function(af, hostname, service, socktype)
+    local null = ffi.new("void *")
+    local ai = ffi.new("struct addrinfo *[1]", nil)
+    local hints = ffi.new("struct addrinfo [1]")
+    local sockaddr 
+    local addrlen
+
+    hints[0].ai_family = af
+    hints[0].ai_socktype = socktype or SOCK_STREAM
+
+    i = ffi.C.getaddrinfo(hostname, tostring(service), hints, ai)
+    if i == 0 then
+      reply = ai[0]
+      -- print(reply.ai_family, reply.ai_addrlen, reply.ai_socktype)
+      sockaddr =  ai[0].ai_addr;
+      sockaddr = fds.get_sa_any(0)
+      ffi.C.memcpy(sockaddr, ai[0].ai_addr, reply.ai_addrlen)
+      addrlen = reply.ai_addrlen
+    else
+      ffi.C.printf("GAI error: %s\n", ffi.C.gai_strerror(i))
+    end
+    ffi.C.freeaddrinfo(ai[0]);
+    return sockaddr, addrlen
+  end
+
+  fds.connect_socket = function(af, server, service, socktype)
+    local sa, addr_len = fds.lookup(af, server, service, socktype)
+    local s
+    local res
+    local msg = "success"
+    if sa then
+      s = fds.socket(af, socktype) 
+      res = ffi.C.connect(s, sa, addr_len)
+      if not (res == 0) then
+        ffi.C.close(s)
+        s = nil  
+        msg = "can not connect"
+      end
+    else
+      msg = "can not resolve"
+    end
+    return s, msg
+  end
+
   fds.listener_socket = function(port, socktype)
     local s = fds.socket(socktype)
     if ffi.C.bind(s, fds.get_sa_any(port), 128) == 0 and (socktype == SOCK_DGRAM or ffi.C.listen(s, 10)) then
@@ -155,6 +269,65 @@ function socket_set(maxfds)
       return nil
     end 
   end
+
+  -- make a couple of unix sockets
+  fds.socketpair = function()
+    local sv = ffi.new("int[2]")
+    local res = ffi.C.socketpair(1, 1, 0, sv)
+    if res == 0 then
+      return sv, res
+    else
+      return nil, res
+    end
+  end
+
+  fds.send_fd = function(ipc, fd, code)
+    local buf = ffi.new("char [1]")
+    buf[0] = code
+    local cmsgptr = ffi.new("struct cmsghdr_fd[1]")
+    local cmsg = cmsgptr[0]
+    local iovptr = ffi.new("struct iovec[1]")
+    local iov = iovptr[0]
+    local msgptr = ffi.new("struct msghdr[1]")
+    local msg = msgptr[0]
+   
+    iov.iov_base = buf
+    iov.iov_len = 1
+
+    cmsg.cmsg_level = 1;
+    cmsg.cmsg_type = 1;  
+    cmsg.cmsg_len = ffi.sizeof(cmsg)
+    cmsg.fd = fd
+    msg.msg_iov = iovptr;
+    msg.msg_iovlen = 1;
+    msg.msg_control = cmsgptr; 
+    msg.msg_controllen = ffi.sizeof(cmsg)
+    return ffi.C.sendmsg(ipc, msgptr, 0)
+  end
+
+  fds.recv_fd = function(ipc)
+    local buf = ffi.new("char [1]")
+    local cmsgptr = ffi.new("struct cmsghdr_fd[1]")
+    local cmsg = cmsgptr[0]
+    local iovptr = ffi.new("struct iovec[1]")
+    local iov = iovptr[0]
+    local msgptr = ffi.new("struct msghdr[1]")
+    local msg = msgptr[0]
+
+    iov.iov_base = buf
+    iov.iov_len = 1
+
+    msg.msg_iov = iovptr;
+    msg.msg_iovlen = 1;
+    msg.msg_control = cmsg_ptr; 
+    msg.msg_controllen = ffi.sizeof(cmsg)
+    if (ffi.C.recvmsg(ipc, msgptr, 0) > 0) then
+      return cmsg.fd, buf[0]
+    else
+      return nil
+    end
+  end
+
 
   fds.send = function(i, data, len)
     return ffi.C.send(fds.pfds[i].fd, data, len, 0)
