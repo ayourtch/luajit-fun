@@ -116,6 +116,8 @@ int sendmsg(int sockfd, struct msghdr *msg, int flags);
 int recvmsg(int sockfd, struct msghdr *msg, int flags);
 int socketpair(int domain, int type, int protocol, int sv[2]);
 
+void exit(int status);
+
 ]]
 
 
@@ -142,9 +144,6 @@ end
 
 function socket_set(maxfds)
   -- ignore SIGPIPE
-  sig_ign = ffi.new("sighandler_t")
-  sig_ign.pc = sig_ign.pc + 1
-  ffi.C.signal(13, sig_ign)
 
   local fds = {}
   fds.BUF_LEN = 8192
@@ -154,6 +153,13 @@ function socket_set(maxfds)
   fds.nfds = 0
   fds.cb = {}
   fds.listeners = {}
+
+  fds.sig_ignore = function(signum)
+    sig_ign = ffi.new("sighandler_t")
+    sig_ign.pc = sig_ign.pc + 1
+    ffi.C.signal(signum, sig_ign)
+  end
+ 
 
   fds.poll = function(timeout)
     local n = ffi.C.poll(fds.pfds, fds.nfds, timeout)
@@ -261,6 +267,32 @@ function socket_set(maxfds)
     end
     return s, msg
   end
+
+  -- Achtung! Returns an IPC socket to do the recv_fd on!
+
+  fds.fork_connect = function(af, hostname, service)
+    local sv = fds.socketpair()
+    local pid
+    local ipc
+
+    pid = ffi.C.fork()
+    if pid == 0 then
+      ipc = sv[0]
+      ffi.C.close(sv[1])
+      local fd, err = fds.connect_socket(af, hostname, service)
+      if fd then
+	fds.send_fd(ipc, fd, 73) -- ham jargon.
+      else
+	fds.send_fd(ipc, 0, 13)  -- send a lucky number and stdin.
+      end
+      ffi.C.exit(0)
+    else
+      ipc = sv[1]
+      ffi.C.close(sv[0])
+      return ipc
+    end
+  end
+
 
   fds.listener_socket = function(port, socktype)
     local s = fds.socket(socktype)
@@ -400,6 +432,8 @@ function socket_set(maxfds)
   fds.add_udp_listener = function(port, callback)
     return fds.add_listener(SOCK_DGRAM, port, callback)
   end
+
+  fds.sig_ignore(13) -- SIGPIPE
 
   return fds
 end
