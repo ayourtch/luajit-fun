@@ -111,28 +111,31 @@ tokentypes = {
   { "[a-zA-Z$_][a-zA-Z_$0-9]*", "ident" },
   { "[+][+]", "plus plus" },
   { "[-][-]", "minus minus" },
-  { "[|][|]", "op_logic_or" },
-  { "[=][=]", "op_equals" },
-  { "[|][=]", "op_do_or" },
-  { "[&][=]", "op_do_and" },
-  { "[+][=]", "op_do_plus" },
-  { "[-][=]", "op_do_minus" },
-  { "[*][=]", "op_do_minus" },
+  { "[|][|]", "infix-op" },
+  { "[=][=]", "infix-op" },
+  { "[|][=]", "infix-op" },
+  { "[&][=]", "infix-op" },
+  { "[+][=]", "infix-op" },
+  { "[-][=]", "infix-op" },
+  { "[*][=]", "infix-op" },
   { "[(]", "open paren" },
   { "[)]", "close paren" },
   { "[%[]", "open bracket" },
   { "[%]]", "close bracket" },
   { "[{]", "open brace" },
   { "[}]", "close brace" },
-  { "[<]", "open angle" },
-  { "[>]", "close angle" },
+  { "[<]", "infix-op" },
+  { "[>]", "infix-op" },
+  { "[<][=]", "infix-op" },
+  { "[>][=]", "infix-op" },
   { "[,]", "comma" },
   { "[#]", "hash" },
   { "%%:", "hash" }, -- digraph
   { "[;]", "semicolon" },
   { "$", "eol" },
-  { "[!]", "op_not" },
-  { "[+-/*&|=]", "operator" },
+  { "[!]", "prefix-op" },
+  { "[~]", "prefix-op" },
+  { "[+-/*&|=^]", "infix-op" },
   { "'[^']*'", "char literal" },
   { '"[^"]*"', "string literal" },
 }
@@ -245,12 +248,12 @@ assert(tt("  test(a  ,b)", 9, { "comma", ",", "  ", 12 }))
 assert(tt("  'test(a  ,b)'",        1, { "char literal", "'test(a  ,b)'", "  ", 16 }))
 assert(tt("  'test(a\\'  ,b)';a;b",        1, { "char literal", "'test(a\\'  ,b)'", "  ", 18 }))
 assert(tt('  "test(a\\"  ,b)";a;b',        1, { "string literal", '"test(a\\"  ,b)"', "  ", 18 }))
-assert(tt('  *"test(a\\"  ,b)";a;b',       1, { "operator", '*', "  ", 4 }))
+assert(tt('  *"test(a\\"  ,b)";a;b',       1, { "infix-op", '*', "  ", 4 }))
 
 assert(tt( " a+b;",       1, { "ident", 'a', " ", 3 }))
 assert(ttt(" a+b;", 
            { "ident",       "a", " ", 3 },
-           { "operator",    "+", "", 4 },
+           { "infix-op",    "+", "", 4 },
            { "ident",       "b", "", 5 },
            { "semicolon",   ";", "", 6 },
            { "eol",   "", "", 6 }
@@ -258,7 +261,7 @@ assert(ttt(" a+b;",
 
 assert(ttt(" a+b  ( 'Tes;ting\\'', c  );", 
            { "ident",         "a", " ", 3 },
-           { "operator",      "+", "", 4 },
+           { "infix-op",      "+", "", 4 },
            { "ident",         "b", "", 5 },
            { "open paren",    "(", "  ", 8 },
            { "char literal",  "'Tes;ting\\''", " ", 21 },
@@ -277,7 +280,7 @@ assert(ttt(" # define A(X) X+X",
            { "ident",       "X", "", 14 },
            { "close paren", ")", "", 15 },
            { "ident",       "X", " ", 17 },
-           { "operator",    "+", "", 18 },
+           { "infix-op",    "+", "", 18 },
            { "ident",       "X", "", 19 },
            { "eol",   "", "", 19 }
 ))
@@ -577,21 +580,22 @@ function evaluate_expr(astate, all_tokens, start)
 
   local is_infix = function(t)
     local typ = tok_type(t)
-    return typ == "operator"
+    return typ == "infix-op"
   end
 
   local calc = function(v)
     local v1, v2
     v1 = pop_value()
     v2 = pop_value()
-    d("1arg", v1)
-    d("2arg", v2)
-    d("op", v) 
-    if tok_type(v) == "operator" then
+    if tok_type(v) == "infix-op" then
       if tok_str(v) == "-" then
         push_value(v2 - v1)
+      elseif tok_str(v) == "+" then
+        push_value(v2 + v1)
       elseif tok_str(v) == "*" then
         push_value(v2 * v1)
+      elseif tok_str(v) == "/" then
+        push_value(v2 / v1)
       end
     end
   end
