@@ -135,6 +135,7 @@ tokentypes = {
   { "$", "eol" },
   { "[!]", "prefix-op" },
   { "[~]", "prefix-op" },
+  { "[%%]", "infix-op" },
   { "[+-/*&|=^]", "infix-op" },
   { "'[^']*'", "char literal" },
   { '"[^"]*"', "string literal" },
@@ -523,18 +524,49 @@ function evaluate_expr(astate, all_tokens, start)
   local ops = {}
   local vals = {}
 
+  -- boolean to number
+  local b2n = function(x) if x then return 1 else return 0 end end
+
   local prec = {
-    ["*"] = 100,
-    ["-"] = 80,
-    ["("] = 60,
+    ["*"] = { 100, function(a,b) return a*b end },
+    ["%"] = { 100, function(a,b) return a%b end },
+    ["/"] = { 100, function(a,b) return a/b end },
+
+    ["-"] = { 90, function(a,b) return a-b end },
+    ["+"] = { 90, function(a,b) return a+b end },
+
+    [">>"] = { 80, function(a,b) return bit.rshift(a,b) end },
+    ["<<"] = { 80, function(a,b) return bit.lshift(a,b) end },
+
+    ["<"] = { 70, function(a,b) return b2n(a<b) end },
+    [">"] = { 70, function(a,b) return b2n(a<b) end },
+    ["<="] = { 70, function(a,b) return b2n(a<=b) end },
+    [">="] = { 70, function(a,b) return b2n(a>=b) end },
+
+    ["=="] = { 60, function(a,b) return b2n(a == b) end },
+    ["!="] = { 60, function(a,b) return b2n(not (a == b)) end },
+
+    ["&"] = { 50, function(a,b) return bit.band(a,b) end },
+    ["^"] = { 40, function(a,b) return bit.bxor(a,b) end },
+    ["|"] = { 30, function(a,b) return bit.bor(a,b) end },
+    ["&&"] = { 20, function(a,b) return b2n(a and b) end },
+    ["||"] = { 10, function(a,b) return b2n(a or b) end },
+    ["("] = { 0, nil }
   }
 
   local getprec = function(v)
     if v then
-      return prec[v[2]]
+      assert(prec[v[2]])
+      return prec[v[2]][1]
     else
       return 0
     end
+  end
+
+  local infix_op = function(v, a, b)
+    assert(v)
+    assert(prec[v[2]])
+    return prec[v[2]][2](a,b)
   end
 
   local d = function(msg, v)
@@ -554,6 +586,7 @@ function evaluate_expr(astate, all_tokens, start)
     if type(t) == "table" then
       vals[1+#vals] = tonumber(tok_str(t))
     else
+      print("PUSH", tonumber(t))
       vals[1+#vals] = tonumber(t)
     end
   end
@@ -588,15 +621,7 @@ function evaluate_expr(astate, all_tokens, start)
     v1 = pop_value()
     v2 = pop_value()
     if tok_type(v) == "infix-op" then
-      if tok_str(v) == "-" then
-        push_value(v2 - v1)
-      elseif tok_str(v) == "+" then
-        push_value(v2 + v1)
-      elseif tok_str(v) == "*" then
-        push_value(v2 * v1)
-      elseif tok_str(v) == "/" then
-        push_value(v2 / v1)
-      end
+      push_value(infix_op(v, v2, v1))
     end
   end
 
@@ -626,8 +651,9 @@ function evaluate_expr(astate, all_tokens, start)
     calc(opstackpop(astate))
   end
   assert(#vals == 1)
-  res = not (vals[#vals] == 0)
+  res = vals[#vals]
   print("EVAL result:", res) 
+  res = not (vals[#vals] == 0)
   return res
 end
 
