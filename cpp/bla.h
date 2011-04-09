@@ -48,7 +48,7 @@ SUBST end
 // FOO1(asd dsd, second, third)
 // FOO1(asd dsd, second)
 
-#if (1-1)*100
+#if (0-1)*100
  if_has_fired
 #else
  else_has_fired

@@ -512,6 +512,121 @@ function cpp_push_try_fire(astate, cond)
   cpp_try_fire(astate, cond)
 end
 
+-- FIXME FIXME FIXME FIXME
+
+function evaluate_expr(astate, all_tokens, start)
+  -- a shunting yard algorithm 
+  local res = 0
+  local ops = {}
+  local vals = {}
+
+  local prec = {
+    ["*"] = 100,
+    ["-"] = 80,
+    ["("] = 60,
+  }
+
+  local getprec = function(v)
+    if v then
+      return prec[v[2]]
+    else
+      return 0
+    end
+  end
+
+  local d = function(msg, v)
+    if type(v) == "table" then
+      print(msg, v[1], v[2], v[3], v[4])
+    else
+      print(msg, v)
+    end
+  end
+
+  local is_value = function(t)
+    local typ = tok_type(t)
+    return typ == "number"
+  end
+
+  local push_value = function(t)
+    if type(t) == "table" then
+      vals[1+#vals] = tonumber(tok_str(t))
+    else
+      vals[1+#vals] = tonumber(t)
+    end
+  end
+
+  local pop_value = function()
+    local v = vals[#vals]
+    vals[#vals] = nil
+    return v
+  end
+
+  local opstackpush = function(t)
+    ops[1+#ops] = t
+  end
+
+  local opstackpop = function()
+    local t = ops[#ops]
+    ops[#ops] = nil
+    return t
+  end
+
+  local opstacktop = function()
+    return ops[#ops]
+  end
+
+  local is_infix = function(t)
+    local typ = tok_type(t)
+    return typ == "operator"
+  end
+
+  local calc = function(v)
+    local v1, v2
+    v1 = pop_value()
+    v2 = pop_value()
+    d("1arg", v1)
+    d("2arg", v2)
+    d("op", v) 
+    if tok_type(v) == "operator" then
+      if tok_str(v) == "-" then
+        push_value(v2 - v1)
+      elseif tok_str(v) == "*" then
+        push_value(v2 * v1)
+      end
+    end
+  end
+
+  for i = start, #all_tokens do
+    local v = all_tokens[i]
+    print(i, v[1], v[2], v[3], v[4])
+    if is_value(v) then
+      push_value(v)
+    elseif tok_type(v) == "open paren" then
+      -- don't do any calculations on stack - 
+      -- first calculate the stuff in parens
+      opstackpush(v)
+    elseif tok_type(v) == "close paren" then
+      -- do the pending calculations from stack
+      while not ("open paren" == tok_type(opstacktop())) do
+        calc(opstackpop())
+      end
+      opstackpop(astate) -- pop the open paren
+    elseif is_infix(v) then
+      while getprec(v) <= getprec(opstacktop()) do
+        calc(opstackpop(astate))
+      end
+      opstackpush(v)
+    end
+  end
+  while(opstacktop()) do
+    calc(opstackpop(astate))
+  end
+  assert(#vals == 1)
+  res = not (vals[#vals] == 0)
+  print("EVAL result:", res) 
+  return res
+end
+
 function cpp_process(astate, aline)
   local out = {}
   -- print("PROCESS", aline)
@@ -537,24 +652,22 @@ function cpp_process(astate, aline)
       assert(tok_type(t_mname) == "ident", "Expected name to undef")
       macro_undef(astate, tok_str(t_mname))
     elseif tok_str(t_direc) == "if" then
-      local cond = true -- FIXME
+      cond = evaluate_expr(astate, all_tokens, 3) 
       cpp_push_try_fire(astate, cond)
     elseif tok_str(t_direc) == "else" then
       assert(#astate.memit > 1, "stray else")
       cpp_try_fire(astate, true)
     elseif tok_str(t_direc) == "elif" then
       assert(#astate.memit > 1, "stray elif")
-      local cond = true -- FIXME
+      cond = evaluate_expr(astate, all_tokens, 3) 
       cpp_try_fire(astate, cond)
     elseif tok_str(t_direc) == "endif" then
       cpp_pop(astate)
     elseif tok_str(t_direc) == "ifdef" then
-      local cond = true -- FIXME
       cond = not (astate.macros[tok_str(t_mname)] == nil)
       cpp_push_try_fire(astate, cond)
       assert(#astate.memit > 1, "ifdef: internal error")
     elseif tok_str(t_direc) == "ifndef" then
-      local cond = true -- FIXME
       cond = (astate.macros[tok_str(t_mname)] == nil)
       cpp_push_try_fire(astate, cond)
     elseif tok_str(t_direc) == "include" then
