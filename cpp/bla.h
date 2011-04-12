@@ -54,4 +54,12 @@ SUBST end
  else_has_fired
 #endif
 
+#define ASDF asdf
+#define FOO(x) ((x)*(x))
 
+#if defined ASDF
+  ASDF defined!
+#else
+  ASDF not defined!
+#endif
+FOO(x)

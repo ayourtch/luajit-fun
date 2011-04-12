@@ -516,6 +516,12 @@ function cpp_push_try_fire(astate, cond)
   cpp_try_fire(astate, cond)
 end
 
+function is_macro_defined(astate, name)
+  local cond = not (astate.macros[name] == nil)
+  print("COND", name, cond)
+  return cond
+end
+
 -- FIXME FIXME FIXME FIXME
 
 function evaluate_expr(astate, all_tokens, start)
@@ -556,17 +562,30 @@ function evaluate_expr(astate, all_tokens, start)
 
   local getprec = function(v)
     if v then
-      assert(prec[v[2]])
-      return prec[v[2]][1]
+      print("GETPREC", tok_str(v), tok_type(v))
+      if tok_type(v) == "infix-op" then
+        assert(prec[v[2]])
+        return prec[v[2]][1]
+      elseif tok_str(v) == "defined" then
+        return 120
+      elseif prec[v[2]] then
+        return prec[v[2]][1]
+      end
     else
       return 0
     end
   end
 
   local infix_op = function(v, a, b)
+    -- a_r and b_r are the 'real' values to operate with.
+    -- because we store tokens on stack. For better or worse
+    local a_r, b_r, res
+    a_r = tonumber(tok_str(a))
+    b_r = tonumber(tok_str(b))
     assert(v)
     assert(prec[v[2]])
-    return prec[v[2]][2](a,b)
+    res = prec[v[2]][2](a_r,b_r)
+    return res
   end
 
   local d = function(msg, v)
@@ -579,16 +598,17 @@ function evaluate_expr(astate, all_tokens, start)
 
   local is_value = function(t)
     local typ = tok_type(t)
-    return typ == "number"
+    local is_val = false
+    if typ == "number" then
+      is_val = true
+    elseif tok_type(t) == "ident" and (not (tok_str(t) == "defined")) then
+      is_val = true
+    end
+    return is_val
   end
 
   local push_value = function(t)
-    if type(t) == "table" then
-      vals[1+#vals] = tonumber(tok_str(t))
-    else
-      print("PUSH", tonumber(t))
-      vals[1+#vals] = tonumber(t)
-    end
+    vals[1+#vals] = t
   end
 
   local pop_value = function()
@@ -616,12 +636,27 @@ function evaluate_expr(astate, all_tokens, start)
     return typ == "infix-op"
   end
 
+  local make_num = function(n)
+    local v = { "number", tostring(n), -1 }
+    return v
+  end
+
   local calc = function(v)
-    local v1, v2
-    v1 = pop_value()
-    v2 = pop_value()
+    local v1, v2, v3
     if tok_type(v) == "infix-op" then
-      push_value(infix_op(v, v2, v1))
+      v1 = pop_value()
+      v2 = pop_value()
+      push_value(make_num(infix_op(v, v2, v1)))
+    elseif tok_str(v) == "defined" then
+      local res
+      v1 = pop_value()
+      print("Checking", v1)
+      if is_macro_defined(astate, tok_str(v1)) then
+        res = 1
+      else
+        res = 0 
+      end
+      push_value(make_num(res))
     end
   end
 
@@ -630,6 +665,10 @@ function evaluate_expr(astate, all_tokens, start)
     print(i, v[1], v[2], v[3], v[4])
     if is_value(v) then
       push_value(v)
+    elseif tok_str(v) == "defined" then
+      -- unary 'defined' predicate
+      print("DEFINED")
+      opstackpush(v)
     elseif tok_type(v) == "open paren" then
       -- don't do any calculations on stack - 
       -- first calculate the stuff in parens
@@ -641,7 +680,8 @@ function evaluate_expr(astate, all_tokens, start)
       end
       opstackpop(astate) -- pop the open paren
     elseif is_infix(v) then
-      while getprec(v) <= getprec(opstacktop()) do
+      local currprec = getprec(v)
+      while currprec <= getprec(opstacktop()) do
         calc(opstackpop(astate))
       end
       opstackpush(v)
@@ -653,7 +693,7 @@ function evaluate_expr(astate, all_tokens, start)
   assert(#vals == 1)
   res = vals[#vals]
   print("EVAL result:", res) 
-  res = not (vals[#vals] == 0)
+  res = not (tonumber(tok_str(res)) == 0)
   return res
 end
 
