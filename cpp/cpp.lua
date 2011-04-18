@@ -182,7 +182,7 @@ function next_token(xline, start)
       return v[2], tok, space, start + #tok + #space
     end
   end
-  print("NEXT_U", "|"..xline:sub(start).."|")
+  -- print("NEXT_U", "|"..xline:sub(start).."|")
 
   return "unknown", "", "", start
 end
@@ -517,7 +517,7 @@ end
 
 function is_macro_defined(astate, name)
   local cond = not (astate.macros[name] == nil)
-  print("COND", name, cond)
+  -- print("COND", name, cond)
   return cond
 end
 
@@ -561,7 +561,7 @@ function evaluate_expr(astate, all_tokens, start)
 
   local getprec = function(v)
     if v then
-      print("GETPREC", tok_str(v), tok_type(v))
+      -- print("GETPREC", tok_str(v), tok_type(v))
       if tok_type(v) == "infix-op" then
         assert(prec[v[2]])
         return prec[v[2]][1]
@@ -588,10 +588,12 @@ function evaluate_expr(astate, all_tokens, start)
   end
 
   local d = function(msg, v)
-    if type(v) == "table" then
-      print(msg, v[1], v[2], v[3], v[4])
-    else
-      print(msg, v)
+    if false then
+      if type(v) == "table" then
+        print(msg, v[1], v[2], v[3], v[4])
+      else
+        print(msg, v)
+      end
     end
   end
 
@@ -649,7 +651,7 @@ function evaluate_expr(astate, all_tokens, start)
     elseif tok_str(v) == "defined" then
       local res
       v1 = pop_value()
-      print("Checking", v1)
+      -- print("Checking", v1)
       if is_macro_defined(astate, tok_str(v1)) then
         res = 1
       else
@@ -661,12 +663,12 @@ function evaluate_expr(astate, all_tokens, start)
 
   for i = start, #all_tokens do
     local v = all_tokens[i]
-    print(i, v[1], v[2], v[3], v[4])
+    -- print(i, v[1], v[2], v[3], v[4])
     if is_value(v) then
       push_value(v)
     elseif tok_str(v) == "defined" then
       -- unary 'defined' predicate
-      print("DEFINED")
+      -- print("DEFINED")
       opstackpush(v)
     elseif tok_type(v) == "open paren" then
       -- don't do any calculations on stack - 
@@ -691,7 +693,7 @@ function evaluate_expr(astate, all_tokens, start)
   end
   assert(#vals == 1)
   res = vals[#vals]
-  print("EVAL result:", res) 
+  -- print("EVAL result:", res) 
   res = not (tonumber(tok_str(res)) == 0)
   return res
 end
