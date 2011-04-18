@@ -305,6 +305,7 @@ local process_token
 function process_token_real(astate, out_tokens, in_tokens, i, indent)
   local tok = in_tokens[i]
   local typ = tok_type(tok)
+  print("PROCESS_TOKEN:", i)
   -- the token is an argument of the macro - expand according to the current
   -- macro that is being executed
   if typ == "macro_arg" then

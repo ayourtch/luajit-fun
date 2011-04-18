@@ -63,3 +63,4 @@ SUBST end
   ASDF not defined!
 #endif
 FOO(x)
+FOO(FOO(x))
