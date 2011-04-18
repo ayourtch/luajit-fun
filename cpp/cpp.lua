@@ -302,10 +302,13 @@ end
 
 local process_token
 
-function process_token_real(astate, out_tokens, in_tokens, i, indent)
+function process_token_real(astate, out_tokens, in_tokens, i, indent, is_inner)
   local tok = in_tokens[i]
   local typ = tok_type(tok)
-  print("PROCESS_TOKEN:", i)
+  -- if we are processing the arguments, exit immediately upon hitting the comma
+  if typ == "comma" and is_inner then
+    return i
+  end
   -- the token is an argument of the macro - expand according to the current
   -- macro that is being executed
   if typ == "macro_arg" then
@@ -320,9 +323,8 @@ function process_token_real(astate, out_tokens, in_tokens, i, indent)
     ichain[1][3] = tok[3]
 
     while ix <= #ichain do
-      ix = process_token(astate, out_tokens, ichain, ix, tok_indent_str(tok))
+      ix = process_token(astate, out_tokens, ichain, ix, tok_indent_str(tok), true)
     end
-    
     return i+1 
   elseif typ == "ident" then
     local m = astate.macros[tok_str(tok)]
@@ -331,7 +333,7 @@ function process_token_real(astate, out_tokens, in_tokens, i, indent)
         -- non-parametrized macro
         local ib = 1
         while ib <= #m.body do
-          ib = process_token(astate, out_tokens, m.body, ib)
+          ib = process_token(astate, out_tokens, m.body, ib, true)
         end
         return i+1
       else
@@ -341,15 +343,11 @@ function process_token_real(astate, out_tokens, in_tokens, i, indent)
         local marg = {}
         i = i+2 -- skip the open paren
         -- collect the arguments for the macro
-        while not (tok_type(in_tokens[i]) == "close paren") do
-          -- print("ARG:", in_tokens[i])
-          table.insert(marg, in_tokens[i])
+        while in_tokens[i] and not (tok_type(in_tokens[i]) == "close paren") do
+          i = process_token(astate, marg, in_tokens, i, true)
+          margs[1+#margs] = marg
+          marg = {}
           i = i + 1
-          if tok_type(in_tokens[i]) == "comma" then
-            margs[1+#margs] = marg
-            marg = {}
-            i = i + 1
-          end 
         end
         if #marg > 0 then
           margs[1+#margs] = marg
