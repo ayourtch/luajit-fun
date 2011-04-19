@@ -1,7 +1,18 @@
 -- http://sunsite.ualberta.ca/Documentation/Gnu/gcc-3.0.2/html_chapter/cpp_1.html
 
 function fname_expand(fname)
-  return "/usr/include/" .. fname
+  local exists = function(fullfname)
+    local f = io.open(fullfname)
+    if f then
+      f:close()
+      return fullfname 
+    else
+      return nil
+    end 
+  end
+  local res = exists("/usr/include/" .. fname) or
+         exists("/usr/include/linux/" .. fname)
+  return res
 end
 
 
@@ -118,6 +129,8 @@ tokentypes = {
   { "[+][=]", "infix-op" },
   { "[-][=]", "infix-op" },
   { "[*][=]", "infix-op" },
+  { "[:][:]", "infix-op" },
+  { "[:]", "infix-op" },
   { "[(]", "open paren" },
   { "[)]", "close paren" },
   { "[%[]", "open bracket" },
@@ -136,6 +149,7 @@ tokentypes = {
   { "[!]", "prefix-op" },
   { "[~]", "prefix-op" },
   { "[%%]", "infix-op" },
+  { "[?]", "infix-op" },
   { "[&][&]", "infix-op" },
   { "[+-/*&|=^]", "infix-op" },
   { "'[^']*'", "char literal" },
@@ -412,9 +426,23 @@ end
 
 -- walk all the tokens, expanding as needed, from state
 function process_tokens(astate, out_tokens, in_tokens, start) 
-  local i = 1
+  local i = start
   while i <= #in_tokens do
     i = process_token(astate, out_tokens, in_tokens, i)
+  end
+  return i
+end
+
+function process_tokens_in_directive(astate, out_tokens, in_tokens, start) 
+  local i = start
+  while i <= #in_tokens do
+    if tok_str(in_tokens[i]) == "defined" then
+      table.insert(out_tokens, in_tokens[i])
+      table.insert(out_tokens, in_tokens[i+1])
+      i = i + 2
+    else
+      i = process_token(astate, out_tokens, in_tokens, i)
+    end
   end
   return i
 end
@@ -502,6 +530,7 @@ function macro_define_macro(astate, mname, tokens, start)
   end
   -- insert EOL too
   table.insert(m.body, tokens[token_idx])
+  -- print("BODY:", tokens2str(m.body))
 
   astate.macros[mname] = m
 end
@@ -606,7 +635,6 @@ function evaluate_expr(astate, all_tokens, start)
     local tonum = function(n)
       if string.match(n, "[0-9]+L") then
         n = string.sub(n, 1, -2)
-        print("TADA", n)
       end
       n = tonumber(n)
       if not n then n = 0 end
@@ -724,7 +752,7 @@ function evaluate_expr(astate, all_tokens, start)
   while(opstacktop()) do
     calc(opstackpop(astate))
   end
-  print("VALS:", #vals)
+  -- print("VALS:", #vals)
   if #vals > 1 then
     for i,v in ipairs(vals) do
       print(i,tok_str(v))
@@ -741,7 +769,7 @@ local cpp_helper
 
 function cpp_process(astate, aline)
   local out = {}
-  print("PROCESS", aline)
+  -- print("PROCESS", aline)
   local all_tokens = string2tokens(aline, 1)
   local t_first = all_tokens[1]
   if tok_type(t_first) == "hash" then
@@ -764,7 +792,12 @@ function cpp_process(astate, aline)
       assert(tok_type(t_mname) == "ident", "Expected name to undef")
       macro_undef(astate, tok_str(t_mname))
     elseif tok_str(t_direc) == "if" then
-      cond = evaluate_expr(astate, all_tokens, 3) 
+      -- cond = evaluate_expr(astate, all_tokens, 3) 
+      local temp_out = {}
+      local num = process_tokens_in_directive(astate, temp_out, all_tokens, 3)
+      -- print("NUM:", num, tokens2str(temp_out))
+      cond = evaluate_expr(astate, temp_out, 1) 
+      
       cpp_push_try_fire(astate, cond)
     elseif tok_str(t_direc) == "else" then
       assert(#astate.memit > 1, "stray else")
@@ -781,23 +814,27 @@ function cpp_process(astate, aline)
       assert(#astate.memit > 1, "ifdef: internal error")
     elseif tok_str(t_direc) == "ifndef" then
       cond = (astate.macros[tok_str(t_mname)] == nil)
+      -- print("COND:", cond, astate.macros[tok_str(t_mname)])
       cpp_push_try_fire(astate, cond)
     elseif tok_str(t_direc) == "include" then
-      local t_paren = { next_token(aline, t_direc) }
-      local t_fname = { next_token(aline, t_paren) }
-      local fname = tok_str(t_fname)
-      if tok_str(t_paren) == "<" then
-        while true do
-          t_fname = { next_token(aline, t_fname) }
-          if tok_str(t_fname) == ">" then break end
-          fname = fname .. tok_str(t_fname)
-        end
-        fname = fname_expand(fname)
-      end  
-      print("INCLUDE:", fname)
-      cpp(astate, fname)
+      if astate.memit[#astate.memit] and not astate.mmute[#astate.mmute] then
+        local t_paren = { next_token(aline, t_direc) }
+        local t_fname = { next_token(aline, t_paren) }
+        local fname = tok_str(t_fname)
+        if tok_str(t_paren) == "<" then
+          while true do
+            t_fname = { next_token(aline, t_fname) }
+            if tok_str(t_fname) == ">" then break end
+            fname = fname .. tok_str(t_fname)
+          end
+          fname = fname_expand(fname)
+        end  
+        -- print("INCLUDE:", fname)
+        cpp(astate, fname)
+      end
     else 
-      print("ERR:", tok_str(t_direc))
+      -- FIXME here - wrap like #include
+      -- print("ERR:", tok_str(t_direc))
     end 
   else
     -- ordinary line 
