@@ -435,8 +435,6 @@ function string2tokens(aline, astart)
 end
 
 function macro_undef(astate, aname)
-  print("UNDEFINE:", aname)
-
   astate.macros[aname] = nil
 end
 
