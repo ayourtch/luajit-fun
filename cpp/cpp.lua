@@ -306,7 +306,7 @@ function process_token_real(astate, out_tokens, in_tokens, i, indent, is_inner, 
   local tok = in_tokens[i]
   local typ = tok_type(tok)
   if not level then level = 0 end
-  print("ProcessToken", tok_str(tok), typ, i, level)
+  -- print("ProcessToken", tok_str(tok), typ, i, level)
   -- if we are processing the arguments, exit immediately upon hitting the comma
   if typ == "comma" and is_inner then
     return i
@@ -319,12 +319,9 @@ function process_token_real(astate, out_tokens, in_tokens, i, indent, is_inner, 
       local margs = astate.margs[level]
       local mname = astate.mcall[level]
       local m = astate.macros[mname]
-      print("ARGVALUE: Getting arg value for level", level, " arg name ", nam, res, mname)
+      -- print("ARGVALUE: Getting arg value for level", level, " arg name ", nam, res, mname)
       local res = margs[m.iarg[nam]]  
-      if res then
-        print("ARGVALUE result:", tokens2str(res))
-      end
-      if not res and level > 0 then
+      if not res and level > 1 then 
         res = get_arg_value(astate, level-1, nam)
       end
       return res
@@ -332,10 +329,14 @@ function process_token_real(astate, out_tokens, in_tokens, i, indent, is_inner, 
     get_arg_value = get_arg_value_real
     local ix = 1
     local nam = tok_str(tok)
-    print("SUBST0:", nam)
+    -- print("SUBST0:", nam, is_inner)
     local ichain = get_arg_value(astate, #(astate.margs), nam) -- margs[m.iarg[nam]]
-    print("SUBST:", i, ichain)
-    print("====>", tokens2str({ tok }), tokens2str(ichain), i)
+    -- pre-expand the arg based on the upper level macros
+    if is_inner then
+      ichain = get_arg_value(astate, #(astate.margs)-1, nam)
+    end
+    -- print("SUBST:", i, ichain)
+    -- print("====>", tokens2str({ tok }), tokens2str(ichain), i)
     ichain[1][3] = tok[3]
 
     while ix <= #ichain do
@@ -345,7 +346,7 @@ function process_token_real(astate, out_tokens, in_tokens, i, indent, is_inner, 
   elseif typ == "ident" then
     local m = astate.macros[tok_str(tok)]
     if m and ((not m.nargs) or (m.nargs and tok_type(in_tokens[i+1]) == "open paren")) then
-      print("MACRO", m.name, tokens2str(m.body))
+      -- print("MACRO", m.name, tokens2str(m.body))
       if not m.nargs then
         -- non-parametrized macro
         local ib = 1
@@ -363,32 +364,26 @@ function process_token_real(astate, out_tokens, in_tokens, i, indent, is_inner, 
         astate.mcall[1+#(astate.mcall)] = m.name
         -- collect the arguments for the macro
         while in_tokens[i] and not (tok_type(in_tokens[i]) == "close paren") do
-          print("Get argument", 1+#margs)
+          -- print("Get argument", 1+#margs)
           i = process_token(astate, marg, in_tokens, i, 0, true, level+1)
-          if (#marg == 1) and (tok_type(marg[1]) == "macro_arg") then
-            printf("EXPAND")
-            local expand_marg = marg
-            marg = {}
-            process_token(astate, marg, expand_marg, 1, 0, true, level+1)
-          end 
           margs[1+#margs] = marg
-          print("Argument ", #margs, tokens2str(marg), level)
+          -- print("Argument ", #margs, tokens2str(marg), level)
           marg = {}
           if not (tok_type(in_tokens[i]) == "close paren") then
             i = i + 1
           end
         end
-        print("Collected args, i=", i, "#marg", #marg)
+        -- print("Collected args, i=", i, "#marg", #marg)
         if #marg > 0 then
           margs[1+#margs] = marg
         end
         
         local ib = 1
-        print("Expanding", tokens2str(m.body), m.name)
+        -- print("Expanding", tokens2str(m.body), m.name)
         while ib <= #m.body do
           ib = process_token(astate, out_tokens, m.body, ib, 0, false, level+1)
         end
-        print("CANCEL ", #(astate.margs), astate.mcall[#(astate.mcall)])
+        -- print("CANCEL ", #(astate.margs), astate.mcall[#(astate.mcall)])
         astate.margs[#(astate.margs)] = nil
         astate.mcall[#(astate.mcall)] = nil
         return i+1
