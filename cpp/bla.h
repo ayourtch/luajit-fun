@@ -56,6 +56,7 @@ SUBST end
 
 #define ASDF asdf
 #define FOO(x) ((x)*(x))
+#define TWOARG(y,z) ((z)+(y))
 
 #if defined ASDF
   ASDF defined!
@@ -63,4 +64,4 @@ SUBST end
   ASDF not defined!
 #endif
 FOO(x)
-FOO(FOO(x))
+TWOARG(FOO(TWOARG(y1,z1)),TWOARG(y2,z2))
