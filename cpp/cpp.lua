@@ -51,7 +51,7 @@ end
 function eat_comments(line)
   local start = 1
   local parts = {}
-  -- print("PROCESS:", line, parse_state)
+  print("PROCESS:", line, parse_state)
   while true do
     if start > #line then
       break
@@ -361,7 +361,7 @@ function process_token_real(astate, out_tokens, in_tokens, i, indent, is_inner, 
   elseif typ == "ident" then
     local m = astate.macros[tok_str(tok)]
     if m and ((not m.nargs) or (m.nargs and tok_type(in_tokens[i+1]) == "open paren")) then
-      -- print("MACRO", m.name, tokens2str(m.body))
+      print("MACRO", m.name, tokens2str(m.body), m.nargs)
       if not m.nargs then
         -- non-parametrized macro
         local ib = 1
@@ -767,7 +767,7 @@ end
 
 local cpp_helper 
 
-function cpp_process(astate, aline)
+function cpp_process(astate, aline, get_next_line)
   local out = {}
   -- print("PROCESS", aline)
   local all_tokens = string2tokens(aline, 1)
@@ -855,26 +855,40 @@ function cpp(astate, fname)
   local line_accum = {}
   local comment_accum = {}
   local linenum = 0
+
+  local get_next_line = function()
+    local line
+    while true do
+      line = f:read()
+      linenum = linenum + 1
+      if not line then
+        break
+      end
+
+      if line:sub(#line) == "\\" then
+        table.insert(line_accum, line:sub(1, #line-1))
+      else
+        line = eat_comments(table.concat(line_accum, "") .. line)
+        if parse_state == "comment" then
+          table.insert(comment_accum, line)
+          line_accum = {} 
+        else
+          line = table.concat(comment_accum, "") .. line
+          comment_accum = {}
+          line_accum = {} 
+          break
+        end
+      end
+    end
+    return line 
+  end
+
   while true do
-    local line = f:read()
-    linenum = linenum + 1
+    line = get_next_line()
     if not line then
       break
     end
-    if line:sub(#line) == "\\" then
-      table.insert(line_accum, line:sub(1, #line-1))
-    else
-      line = eat_comments(table.concat(line_accum, "") .. line)
-      if parse_state == "comment" then
-        table.insert(comment_accum, line)
-        line_accum = {} 
-      else
-        line = table.concat(comment_accum, "") .. line
-        comment_accum = {}
-        line_accum = {} 
-        cpp_process(astate, line)
-      end
-    end
+    cpp_process(astate, line, get_next_line)
   end
   f:close()
 end
