@@ -107,7 +107,7 @@ assert(eat_comments("/* \"a asd aasd  */") == " ")
 
 tokentypes = {
   { "0x[0-9A-F]+", "number" },
-  { "[0-9]+", "number" },
+  { "[0-9]+L?", "number" },
   { "[a-zA-Z$_][a-zA-Z_$0-9]*", "ident" },
   { "[+][+]", "plus plus" },
   { "[-][-]", "minus minus" },
@@ -124,10 +124,10 @@ tokentypes = {
   { "[%]]", "close bracket" },
   { "[{]", "open brace" },
   { "[}]", "close brace" },
-  { "[<]", "infix-op" },
-  { "[>]", "infix-op" },
   { "[<][=]", "infix-op" },
   { "[>][=]", "infix-op" },
+  { "[<]", "infix-op" },
+  { "[>]", "infix-op" },
   { "[,]", "comma" },
   { "[#]", "hash" },
   { "%%:", "hash" }, -- digraph
@@ -136,6 +136,7 @@ tokentypes = {
   { "[!]", "prefix-op" },
   { "[~]", "prefix-op" },
   { "[%%]", "infix-op" },
+  { "[&][&]", "infix-op" },
   { "[+-/*&|=^]", "infix-op" },
   { "'[^']*'", "char literal" },
   { '"[^"]*"', "string literal" },
@@ -568,9 +569,9 @@ function evaluate_expr(astate, all_tokens, start)
     ["<<"] = { 80, function(a,b) return bit.lshift(a,b) end },
 
     ["<"] = { 70, function(a,b) return b2n(a<b) end },
-    [">"] = { 70, function(a,b) return b2n(a<b) end },
+    [">"] = { 70, function(a,b) return b2n((a) and (a>b)) end },
     ["<="] = { 70, function(a,b) return b2n(a<=b) end },
-    [">="] = { 70, function(a,b) return b2n(a>=b) end },
+    [">="] = { 70, function(a,b) return b2n((a) or (not b) and (a>=b)) end },
 
     ["=="] = { 60, function(a,b) return b2n(a == b) end },
     ["!="] = { 60, function(a,b) return b2n(not (a == b)) end },
@@ -587,6 +588,7 @@ function evaluate_expr(astate, all_tokens, start)
     if v then
       -- print("GETPREC", tok_str(v), tok_type(v))
       if tok_type(v) == "infix-op" then
+        if not prec[v[2]] then print(tok_str(v)) end
         assert(prec[v[2]])
         return prec[v[2]][1]
       elseif tok_str(v) == "defined" then
@@ -603,8 +605,17 @@ function evaluate_expr(astate, all_tokens, start)
     -- a_r and b_r are the 'real' values to operate with.
     -- because we store tokens on stack. For better or worse
     local a_r, b_r, res
-    a_r = tonumber(tok_str(a))
-    b_r = tonumber(tok_str(b))
+    local tonum = function(n)
+      if string.match(n, "[0-9]+L") then
+        n = string.sub(n, 1, -2)
+        print("TADA", n)
+      end
+      n = tonumber(n)
+      if not n then n = 0 end
+      return n
+    end
+    a_r = tonum(tok_str(a))
+    b_r = tonum(tok_str(b))
     assert(v)
     assert(prec[v[2]])
     res = prec[v[2]][2](a_r,b_r)
@@ -715,6 +726,12 @@ function evaluate_expr(astate, all_tokens, start)
   while(opstacktop()) do
     calc(opstackpop(astate))
   end
+  print("VALS:", #vals)
+  if #vals > 1 then
+    for i,v in ipairs(vals) do
+      print(i,tok_str(v))
+    end
+  end
   assert(#vals == 1)
   res = vals[#vals]
   -- print("EVAL result:", res) 
@@ -722,9 +739,11 @@ function evaluate_expr(astate, all_tokens, start)
   return res
 end
 
+local cpp_helper 
+
 function cpp_process(astate, aline)
   local out = {}
-  -- print("PROCESS", aline)
+  print("PROCESS", aline)
   local all_tokens = string2tokens(aline, 1)
   local t_first = all_tokens[1]
   if tok_type(t_first) == "hash" then
@@ -766,6 +785,19 @@ function cpp_process(astate, aline)
       cond = (astate.macros[tok_str(t_mname)] == nil)
       cpp_push_try_fire(astate, cond)
     elseif tok_str(t_direc) == "include" then
+      local t_paren = { next_token(aline, t_direc) }
+      local t_fname = { next_token(aline, t_paren) }
+      local fname = tok_str(t_fname)
+      if tok_str(t_paren) == "<" then
+        while true do
+          t_fname = { next_token(aline, t_fname) }
+          if tok_str(t_fname) == ">" then break end
+          fname = fname .. tok_str(t_fname)
+        end
+        fname = fname_expand(fname)
+      end  
+      print("INCLUDE:", fname)
+      cpp(astate, fname)
     else 
       print("ERR:", tok_str(t_direc))
     end 
@@ -812,6 +844,8 @@ function cpp(astate, fname)
   f:close()
 end
 
+cpp_helper = cpp
+
 local cpp_global_state = {
   print = print,
   macros = {},
@@ -821,9 +855,10 @@ local cpp_global_state = {
   mmute = { false }, -- whether the output is muted by upper-layer conditionals ( mute = mute(parent) or not memit(parent) )
   mfired = { false }, -- whether the #if/else like conditional has fired previously
 }
+
 -- cpp("stdio.h")
 -- cpp(cpp_global_state, "bla.h")
-cpp(cpp_global_state, "bla1.h")
--- cpp(cpp_global_state, "/usr/include/stdio.h")
+-- cpp(cpp_global_state, "bla1.h")
+cpp(cpp_global_state, "/usr/include/stdio.h")
 -- cpp(cpp_global_state, "/usr/include/sys/stat.h")
 -- cpp(cpp_global_state, "/usr/include/unistd.h")
