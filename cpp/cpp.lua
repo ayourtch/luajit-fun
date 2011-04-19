@@ -317,7 +317,7 @@ end
 
 local process_token
 
-function process_token_real(astate, out_tokens, in_tokens, i, indent, is_inner, level)
+function process_token_real(astate, out_tokens, in_tokens, i, indent, is_inner, level, get_next_line)
   local tok = in_tokens[i]
   local typ = tok_type(tok)
   if not level then level = 0 end
@@ -379,13 +379,24 @@ function process_token_real(astate, out_tokens, in_tokens, i, indent, is_inner, 
         astate.mcall[1+#(astate.mcall)] = m.name
         -- collect the arguments for the macro
         while in_tokens[i] and not (tok_type(in_tokens[i]) == "close paren") do
-          -- print("Get argument", 1+#margs)
-          i = process_token(astate, marg, in_tokens, i, 0, true, level+1)
-          margs[1+#margs] = marg
-          -- print("Argument ", #margs, tokens2str(marg), level)
-          marg = {}
-          if not (tok_type(in_tokens[i]) == "close paren") then
-            i = i + 1
+          -- append some MORE if needed
+          if i == #in_tokens and tok_type(in_tokens[i]) == "eol" then
+            in_tokens[i] = nil
+            local aline = get_next_line()
+	    print("GOT MORE:", aline)
+            local more_tokens = string2tokens(aline, 1)
+            for _, ttok in ipairs(more_tokens) do
+              table.insert(in_tokens, ttok)
+            end
+          else
+            -- print("Get argument", 1+#margs)
+            i = process_token(astate, marg, in_tokens, i, 0, true, level+1)
+            margs[1+#margs] = marg
+            -- print("Argument ", #margs, tokens2str(marg), level)
+            marg = {}
+            if not (tok_type(in_tokens[i]) == "close paren") then
+              i = i + 1
+            end
           end
         end
         -- print("Collected args, i=", i, "#marg", #marg)
@@ -415,20 +426,20 @@ end
 
 
 -- process_token fixes up the indentation
-process_token = function(astate, out_tokens, in_tokens, i, indent, inner, level)
+process_token = function(astate, out_tokens, in_tokens, i, indent, inner, level, get_next_line)
   local old_indent = tok_indent_str(in_tokens[i])
   local old_i = i
   local old_j = #out_tokens + 1
-  local ret = process_token_real(astate, out_tokens, in_tokens, i, indent, inner, level)
+  local ret = process_token_real(astate, out_tokens, in_tokens, i, indent, inner, level, get_next_line)
   out_tokens[old_j][3] = old_indent
   return ret
 end
 
 -- walk all the tokens, expanding as needed, from state
-function process_tokens(astate, out_tokens, in_tokens, start) 
+function process_tokens(astate, out_tokens, in_tokens, start, get_next_line) 
   local i = start
   while i <= #in_tokens do
-    i = process_token(astate, out_tokens, in_tokens, i)
+    i = process_token(astate, out_tokens, in_tokens, i, nil, nil, nil, get_next_line)
   end
   return i
 end
@@ -840,7 +851,7 @@ function cpp_process(astate, aline, get_next_line)
     -- ordinary line 
     if astate.memit[#astate.memit] and not astate.mmute[#astate.mmute] then
       local out_tokens = {}
-      process_tokens(astate, out_tokens, all_tokens, 1) 
+      process_tokens(astate, out_tokens, all_tokens, 1, get_next_line) 
       astate.print(tokens2str(out_tokens))
     end
   end
