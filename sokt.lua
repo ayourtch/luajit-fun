@@ -209,7 +209,7 @@ function socket_set(maxfds)
     end
   end
 
-  fds.socket = function(addr_f, socktype)
+  fds.socket = function(socktype, addr_f)
     local st = socktype or SOCK_STREAM
     local af = addr_f or AF_INET6
     local s = ffi.C.socket(af, st, 0)
