@@ -1,6 +1,7 @@
 local S = require "syscall"
 local ffi = require("ffi")
 local sokt = require "sokt"
+local ht = require "httparse"
 
 -- Eventloop test bench
 
@@ -15,7 +16,10 @@ local in_loop = true
 local my_accept_cb = function(fds, s)
   local cb = {}
   cb.read = function(fds, s, data, len)
+    local d = ht.parse(S.string(data, len), nil)
     s:send(HTTP_REPLY, #HTTP_REPLY)
+    s:send(d.method, #d.method)
+    s:send(d.uri, #d.uri)
     fds.close(s)
   end
   cb.close = function(fds, s)
