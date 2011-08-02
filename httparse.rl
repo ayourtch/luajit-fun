@@ -1,5 +1,6 @@
 local math,string = math,string
 local print=print
+local bit = require 'bit'
 
 module "httparse"
 
@@ -10,15 +11,15 @@ machine http;
 action mark { mark = fpc }
 action http_version_major { }
 action http_version_minor { }
-action http_method { d.method = string.sub(data, mark, fpc) }
-action http_uri { d.uri = string.sub(data, mark, fpc) }
-action http_header_name { hname = string.sub(data, mark, fpc) }
+action http_method { d.method = string.sub(data, mark, fpc-1) }
+action http_uri { d.uri = string.sub(data, mark, fpc-1) }
+action http_header_name { hname = string.sub(data, mark, fpc-1) }
 action mark_value { mark_value = fpc }
 action http_header_value { 
   if not d.hdr[hname] then 
-    d.hdr[hname] = string.sub(data, mark_value, fpc) 
+    d.hdr[hname] = string.sub(data, mark_value, fpc-1) 
   else
-    d.hdr[hname] = { d.hdr[hname], string.sub(data, mark_value, fpc) }
+    d.hdr[hname] = { d.hdr[hname], string.sub(data, mark_value, fpc-1) }
   end
 } 
 

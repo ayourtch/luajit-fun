@@ -1,6 +1,7 @@
 
 local math,string = math,string
 local print=print
+local bit = require 'bit'
 
 module "httparse"
 
@@ -9,6 +10,9 @@ module "httparse"
 
 
 
+	local to_even = function(x) return x - bit.band(x,1) end
+	local shr = function(x) return bit.rshift(x,1) end
+	local shl = function(x) return bit.lshift(x,1) end
 function init__http_actions_0()
 	return {
 		[0] =     0,    1,    0,    1,    1,    1,    2,    1,    3,    1,    4,    1,
@@ -196,9 +200,6 @@ end -- goto_targ == 0
 _goto_targ = 1 -- fallthrough emulation
 if not _continue_goto and _goto_targ == 1 then -- resume
 	local _break_match = false
-	local to_even = function(x) return x-math.mod(x,2) end
-	local shr = function(x) return to_even(x)/2 end
-	local shl = function(x) return x*2 end
 	repeat
 	_keys = _http_key_offsets[cs]
 	_trans = _http_index_offsets[cs]
@@ -259,39 +260,39 @@ if not _continue_goto and _goto_targ == 1 then -- resume
 			_acts = _acts + 1
 			if false then -- action switch
 			elseif _curr_act == 0 then
---# line 10 "httparse.rl"
-			if true then mark = p 	end
-			elseif _curr_act == 1 then
 --# line 11 "httparse.rl"
-			if true then 	end
-			elseif _curr_act == 2 then
+			if true then --[[ action ]]  mark = p 	end -- [[ action ]] 
+			elseif _curr_act == 1 then
 --# line 12 "httparse.rl"
-			if true then 	end
-			elseif _curr_act == 3 then
+			if true then --[[ action ]]  	end -- [[ action ]] 
+			elseif _curr_act == 2 then
 --# line 13 "httparse.rl"
-			if true then d.method = string.sub(data, mark, p) 	end
-			elseif _curr_act == 4 then
+			if true then --[[ action ]]  	end -- [[ action ]] 
+			elseif _curr_act == 3 then
 --# line 14 "httparse.rl"
-			if true then d.uri = string.sub(data, mark, p) 	end
-			elseif _curr_act == 5 then
+			if true then --[[ action ]]  d.method = string.sub(data, mark, p-1) 	end -- [[ action ]] 
+			elseif _curr_act == 4 then
 --# line 15 "httparse.rl"
-			if true then hname = string.sub(data, mark, p) 	end
-			elseif _curr_act == 6 then
+			if true then --[[ action ]]  d.uri = string.sub(data, mark, p-1) 	end -- [[ action ]] 
+			elseif _curr_act == 5 then
 --# line 16 "httparse.rl"
-			if true then mark_value = p 	end
-			elseif _curr_act == 7 then
+			if true then --[[ action ]]  hname = string.sub(data, mark, p-1) 	end -- [[ action ]] 
+			elseif _curr_act == 6 then
 --# line 17 "httparse.rl"
-			if true then 
+			if true then --[[ action ]]  mark_value = p 	end -- [[ action ]] 
+			elseif _curr_act == 7 then
+--# line 18 "httparse.rl"
+			if true then --[[ action ]]  
   if not d.hdr[hname] then 
-    d.hdr[hname] = string.sub(data, mark_value, p) 
+    d.hdr[hname] = string.sub(data, mark_value, p-1) 
   else
-    d.hdr[hname] = { d.hdr[hname], string.sub(data, mark_value, p) }
+    d.hdr[hname] = { d.hdr[hname], string.sub(data, mark_value, p-1) }
   end
-	end
+	end -- [[ action ]] 
 			elseif _curr_act == 8 then
---# line 128 "httparse.rl"
-			if true then parser_done = true 	end
---# line 295 "httparse.lua"
+--# line 129 "httparse.rl"
+			if true then --[[ action ]]  parser_done = true 	end -- [[ action ]] 
+--# line 296 "httparse.lua"
 			end -- action switch
 		end -- while _nacts > 0
 		_nacts = _nacts - 1 -- artifact
