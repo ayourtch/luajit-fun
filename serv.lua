@@ -7,6 +7,7 @@ local prof = require "profiler"
 
 local profiler = nil
 -- local profile = true
+local parse_http = true
 
 -- Eventloop test bench
 
@@ -24,11 +25,11 @@ local my_accept_cb = function(fds, s)
     profiler:start()
   end
   cb.read = function(fds, s, data, len)
-    local d = ht.parse(S.string(data, len), nil)
     local reply = {}
     local headers = {}
     local out = HTTP_REPLY
-    if true then
+    if parse_http then
+      local d = ht.parse(S.string(data, len), nil)
       table.insert(headers, HTTP_REPLY)
       table.insert(reply, d.method)
       table.insert(reply, " ")
@@ -42,7 +43,7 @@ local my_accept_cb = function(fds, s)
       end
       local content = table.concat(reply)
       table.insert(headers, "Content-Length: " .. #content .. "\r\n" )
-      local out = table.concat(headers) .. "\r\n" .. content
+      out = table.concat(headers) .. "\r\n" .. content
     end
     s:send(out, #out)
     fds.close(s)
