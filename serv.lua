@@ -5,6 +5,75 @@ local sokt = require "sokt"
 local ht = require "httparse"
 local prof = require "profiler"
 
+
+------ cgilua.urlcode
+
+----------------------------------------------------------------------------
+-- Decode an URL-encoded string (see RFC 2396)
+----------------------------------------------------------------------------
+function unescape (str)
+    str = string.gsub (str, "+", " ")
+    str = string.gsub (str, "%%(%x%x)", function(h) return string.char(tonumber(h,16)) end)
+    str = string.gsub (str, "\r\n", "\n")
+    return str
+end
+
+----------------------------------------------------------------------------
+-- URL-encode a string (see RFC 2396)
+----------------------------------------------------------------------------
+function escape (str)
+    str = string.gsub (str, "\n", "\r\n")
+    str = string.gsub (str, "([^0-9a-zA-Z ])", -- locale independent
+        function (c) return string.format ("%%%02X", string.byte(c)) end)
+    str = string.gsub (str, " ", "+")
+    return str
+end
+
+----------------------------------------------------------------------------
+-- Insert a (name=value) pair into table [[args]]
+-- @param args Table to receive the result.
+-- @param name Key for the table.
+-- @param value Value for the key.
+-- Multi-valued names will be represented as tables with numerical indexes
+--  (in the order they came).
+----------------------------------------------------------------------------
+function insertfield (args, name, value)
+    if not args[name] then
+        args[name] = value
+    else
+        local t = type (args[name])
+        if t == "string" then
+            args[name] = {
+                args[name],
+                value,
+            }
+        elseif t == "table" then
+            table.insert (args[name], value)
+        else
+            error ("CGILua fatal error (invalid args table)!")
+        end
+    end
+end
+
+----------------------------------------------------------------------------
+-- Parse url-encoded request data 
+--   (the query part of the script URL or url-encoded post data)
+--
+--  Each decoded (name=value) pair is inserted into table [[args]]
+-- @param query String to be parsed.
+-- @param args Table where to store the pairs.
+----------------------------------------------------------------------------
+function parsequery (query, args)
+    if type(query) == "string" then
+        local insertfield, unescape = insertfield, unescape
+        string.gsub (query, "([^&=]+)=([^&=]*)&?",
+            function (key, val)
+                insertfield (args, unescape(key), unescape(val))
+            end)
+    end
+end
+
+
 local profiler = nil
 -- local profile = true
 local parse_http = true
@@ -30,6 +99,14 @@ local my_accept_cb = function(fds, s)
     local out = HTTP_REPLY
     if parse_http then
       local d = ht.parse(S.string(data, len), nil)
+      local query = ""
+      local qpos = string.find(d.uri, "?")
+      if qpos then
+        query = string.sub(d.uri, qpos+1)
+        d.uri = string.sub(d.uri, 1, qpos-1) 
+      end
+      local vars = {}
+      parsequery(query, vars)
       table.insert(headers, HTTP_REPLY)
       table.insert(reply, d.method)
       table.insert(reply, " ")
@@ -40,6 +117,11 @@ local my_accept_cb = function(fds, s)
 	table.insert(reply, ":")
 	table.insert(reply, v)
 	table.insert(reply, "\n")
+      end
+      table.insert(reply, "\nQuery: " .. query)
+      table.insert(reply, "\nQuery vars:\n")
+      for i,v in pairs(vars) do
+        table.insert(reply, i .. " = " .. v .. "\n")
       end
       local content = table.concat(reply)
       table.insert(headers, "Content-Length: " .. #content .. "\r\n" )
